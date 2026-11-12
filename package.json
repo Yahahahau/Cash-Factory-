@@ -1,0 +1,23 @@
+{
+  "name": "pixel-cash-factory",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "PIXEL CASH FACTORY - 3D retro idle tycoon (Three.js + Rapier)",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "test": "node scripts/test.mjs",
+    "sim": "node scripts/sim.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.14.0",
+    "@fontsource/press-start-2p": "^5.3.0",
+    "@fontsource/sarabun": "^5.3.0",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^6.4.6"
+  }
+}

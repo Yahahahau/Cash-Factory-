@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#14182b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>PIXEL CASH FACTORY</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Crect width='8' height='8' fill='%2314182b'/%3E%3Crect x='1' y='1' width='6' height='6' fill='%23ffd23f'/%3E%3Crect x='3' y='2' width='2' height='4' fill='%23ff9e1a'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <div id="app">
+    <div id="stage">
+      <div id="scene">
+        <canvas id="c"></canvas>
+        <div id="floats"></div>
+        <div id="hud">
+          <div class="hud-row">
+            <div class="money-box">
+              <div class="lbl">เงิน</div>
+              <div id="money" class="money">$0</div>
+              <div id="income" class="income">+$0/วินาที</div>
+            </div>
+            <div class="grade-box">
+              <div class="grade-badge" id="gradeBadge">เกรด 1</div>
+              <div class="grade-name" id="gradeName">โรงงานพื้นฐาน</div>
+            </div>
+          </div>
+          <div class="chips">
+            <div class="chip"><span>ผลิต</span><b id="chipSpawn">0</b></div>
+            <div class="chip"><span>เก็บ</span><b id="chipCollect">0</b></div>
+            <div class="chip" id="chipStoreWrap"><span>คลัง</span><b id="chipStore">0/0</b></div>
+          </div>
+          <div class="store-bar" id="storeBar"><i id="storeFill"></i><em id="storeFull">คลังเต็ม! อัปเกรดความจุ</em></div>
+        </div>
+        <div id="flash"></div>
+        <div id="banner"><div class="b-small">เลื่อนขั้นสำเร็จ!</div><div class="b-big" id="bannerTitle"></div><div class="b-sub" id="bannerSub"></div></div>
+        <div id="toast"></div>
+      </div>
+      <div id="panel">
+        <nav id="tabs">
+          <button class="tab on" data-tab="up">อัปเกรด</button>
+          <button class="tab" data-tab="factory">โรงงาน</button>
+          <button class="tab" data-tab="stats">สถิติ</button>
+          <button id="gear" class="gear" aria-label="ตั้งค่า">ตั้งค่า</button>
+        </nav>
+        <section id="tab-up" class="tabbody on">
+          <div class="mode">
+            <span>ซื้อครั้งละ</span>
+            <button class="m on" data-m="1">×1</button><button class="m" data-m="10">×10</button><button class="m" data-m="max">สูงสุด</button>
+          </div>
+          <div id="cards"></div>
+        </section>
+        <section id="tab-factory" class="tabbody"></section>
+        <section id="tab-stats" class="tabbody"></section>
+      </div>
+      <div id="modal" class="hidden"></div>
+      <div id="loading"><div class="ld-title">PIXEL<br />CASH FACTORY</div><div class="ld-bar"><i></i></div><div class="ld-sub">กำลังโหลด…</div></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

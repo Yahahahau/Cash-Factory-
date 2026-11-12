@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ตัวอย่างฝัง PIXEL CASH FACTORY ด้วย iframe</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0d1a;font-family:system-ui,sans-serif;color:#fff}
+  /* iframe เต็มพื้นที่ที่แอปโฮสต์ให้ — เกมปรับเลย์เอาต์/อัตราส่วนเองทุกขนาด */
+  #game{position:fixed;inset:0;width:100%;height:100%;border:0;display:block}
+  #log{position:fixed;left:8px;bottom:8px;max-width:60%;font:11px monospace;background:#000a;padding:6px;pointer-events:none;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<!-- เปลี่ยน src เป็น URL ที่ดีพลอยจริง เช่น https://yahahahau.github.io/cash-factory-/ -->
+<iframe id="game" src="./index.html" allow="autoplay; fullscreen" loading="eager"></iframe>
+<div id="log"></div>
+<script>
+  const frame = document.getElementById('game');
+  const log = document.getElementById('log');
+  // ข้อความที่เกมส่งมาให้โฮสต์: pcf:ready, pcf:resize, pcf:updateAvailable, pcf:reloading
+  window.addEventListener('message', (e) => {
+    const d = e.data;
+    if (!d || d.source !== 'pixel-cash-factory') return;
+    log.textContent = (JSON.stringify(d) + '\n' + log.textContent).slice(0, 600);
+  });
+  // คำสั่งที่โฮสต์ส่งเข้าเกมได้:
+  const send = (type, value) => frame.contentWindow.postMessage({ target: 'pixel-cash-factory', type, value }, '*');
+  // send('pcf:pause');  send('pcf:resume');  send('pcf:setQuality','low');  send('pcf:checkUpdate');
+  document.addEventListener('visibilitychange', () => send(document.hidden ? 'pcf:pause' : 'pcf:resume'));
+</script>
+</body>
+</html>
