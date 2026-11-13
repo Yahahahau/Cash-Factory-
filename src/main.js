@@ -7,6 +7,7 @@ import { PixelPipeline } from './pixel.js';
 import { GameAudio } from './audio.js';
 import { UI } from './ui.js';
 import { Game } from './game.js';
+import { Pusher } from './pusher.js';
 import { Embed, BUILD_ID, inIframe } from './embed.js';
 
 const QUALITY = {
@@ -40,6 +41,7 @@ async function boot() {
     throw e;
   }
   const physics = new Physics(MAX_BODIES);
+  const pusher = new Pusher(physics);
   const pipeline = new PixelPipeline(world.renderer, world.scene, world.camera);
   const audio = new GameAudio();
   audio.setVolumes(state.settings.sfx, state.settings.music);
@@ -108,10 +110,36 @@ async function boot() {
   });
   ui.state = state;
 
-  game = new Game({ state, physics, world, audio, ui });
+  game = new Game({ pusher, state, physics, world, audio, ui });
   game.setQuality(QUALITY[state.settings.quality]);
   world.setGrade(state.grade, false);
   world.setNozzles(E.nozzleCount(state), false);
+
+  // ---------- anti-jam pusher ----------
+  pusher.onFire = (kind) => {
+    if (kind === 'manual') state.stats.manualPushes++; else state.stats.autoPushes++;
+    audio.clunk();
+  };
+  const assistBtn = document.getElementById('assist');
+  const assistCd = assistBtn.querySelector('.as-cd');
+  let assistWasCd = false;
+  assistBtn.addEventListener('click', () => {
+    audio.unlock();
+    const r = pusher.manual();
+    if (r.ok) {
+      assistBtn.classList.add('pressed');
+      setTimeout(() => assistBtn.classList.remove('pressed'), 160);
+      ui.toast('ลูกสูบดันเหรียญแล้ว!', 1400);
+    } else {
+      audio.deny();
+      ui.toast('ลูกสูบกำลังพัก รออีก ' + Math.ceil(r.wait) + ' วินาที', 1300);
+    }
+  });
+  function updateAssist() {
+    const cd = pusher.manualCd > 0;
+    if (cd !== assistWasCd) { assistBtn.classList.toggle('cd', cd); assistWasCd = cd; }
+    assistCd.style.transform = 'scaleX(' + (cd ? pusher.manualProgress : 0).toFixed(3) + ')';
+  }
 
   // ---------- sizing ----------
   let cssW = 1, cssH = 1;
@@ -226,7 +254,8 @@ async function boot() {
     const dt = Math.min(0.05, raw);
     game.update(dt);
     world.syncObjects(physics);
-    world.update(dt, physics, state);
+    world.update(dt, physics, state, pusher);
+    updateAssist();
     ui.update(state, game);
     slowT += dt;
     if (slowT >= 0.25) { slowT = 0; ui.slowUpdate(state); }
@@ -256,7 +285,7 @@ async function boot() {
   embed.start({ w: window.innerWidth, h: window.innerHeight });
 
   // handy for debugging / automated tests
-  window.__pcf = { get state() { return state; }, game, world, physics, E, Save, ui, pipeline, audio };
+  window.__pcf = { pusher, get state() { return state; }, game, world, physics, E, Save, ui, pipeline, audio };
 }
 
 boot().catch((e) => {

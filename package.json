@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "test": "node scripts/test.mjs",
-    "sim": "node scripts/sim.mjs"
+    "sim": "node scripts/sim.mjs",
+    "test:physics": "node scripts/physics-test.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.14.0",

@@ -181,7 +181,7 @@ export class UI {
       if (b) b.addEventListener('click', () => this.h.onGrade());
     } else if (this.tabNow === 'stats') {
       const st = s.stats;
-      const sig = [Math.floor(st.playSeconds), Math.floor(st.totalEarned), st.objectsCollected | 0, st.taps].join('|');
+      const sig = [Math.floor(st.playSeconds), Math.floor(st.totalEarned), st.objectsCollected | 0, st.taps, st.autoPushes | 0, st.manualPushes | 0].join('|');
       if (!force && this.cache.ssig === sig) return;
       this.cache.ssig = sig;
       const rows = [
@@ -190,6 +190,8 @@ export class UI {
         ['วัตถุที่เก็บแล้ว', E.fmtNum(Math.floor(st.objectsCollected))],
         ['อัปเกรดที่ซื้อ', String(st.upgradesBought)],
         ['จำนวนครั้งที่แตะเก็บ', String(st.taps)],
+        ['ดันเหรียญอัตโนมัติ', String(st.autoPushes | 0)],
+        ['ดันเหรียญด้วยมือ', String(st.manualPushes | 0)],
         ['รายได้ออฟไลน์รวม', E.fmtMoney(st.offlineEarned)],
         ['เวลาที่เล่น', E.fmtDuration(st.playSeconds)],
         ['รายได้ต่อวินาที', E.fmtMoney(E.incomePerSec(s))],

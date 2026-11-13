@@ -72,3 +72,13 @@ src/physics.js   Rapier + object pool                       src/world.js   ฉ�
 src/pixel.js     พิกเซลโพสต์โปรเซส                          src/ui.js      UI ภาษาไทย
 src/game.js      ลูปเกม ผลิต/เก็บ/เงิน                       src/embed.js   iframe + อัปเดตอัตโนมัติ
 ```
+
+## อัปเดต 2.5D / ฟิสิกส์เหรียญ / ระบบกันเหรียญค้าง
+
+- **กล้อง**: `THREE.OrthographicCamera` เอียงเล็กน้อย (ไม่มี perspective distortion) ฉากยังเป็นโมเดล 3D จริง ปรับด้วย `World.fit()` / `_placeCam()`
+- **สไตล์พิกเซล**: ตัดเส้นขอบ/edge detection ออกทั้งหมด เหลือแค่ลดความละเอียด + ดิเธอร์เบาๆ (ปิดได้ในตั้งค่า, UI คมชัดทั้งสองโหมด)
+- **เหรียญ**: `CylinderGeometry` บางๆ มีขอบและลายนูน (ปรับขนาดที่ `COIN_TYPES` ใน `src/layout.js` — ใช้ร่วมกับ collider)
+- **ฟิสิกส์**: Rapier cylinder collider รัศมี/ความหนาตรงกับโมเดล หมุน/กลิ้ง/ตีลังกาได้ในช่องแคบลึก 0.4 หน่วย (CCD, collision groups, pooling, fixed 1/60s)
+- **Anti-jam**: `src/pusher.js` ตรวจเหรียญที่นิ่งในช่องผลิต (ไม่นับถังเก็บปลายทาง) แล้วสั่งลูกสูบ kinematic 4 ตัวดันด้วยแรงจริง ไม่วาร์ป ไม่ลบ ไม่ตั้งตำแหน่งเหรียญ มี cooldown
+- **ปุ่ม "ช่วยดันเหรียญ"**: ดันเพิ่มหนึ่งรอบ มีแอนิเมชันกด, แถบ cooldown 7 วินาที และข้อความแจ้ง
+- ทดสอบ: `npm test` (เศรษฐกิจ) และ `npm run test:physics` (ฟิสิกส์ 9 ชุด)

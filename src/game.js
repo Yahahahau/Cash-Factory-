@@ -5,8 +5,9 @@ const STEP = 1 / 60;
 const SUCK_TIME = 0.26;
 
 export class Game {
-  constructor({ state, physics, world, audio, ui }) {
+  constructor({ state, physics, world, audio, ui, pusher }) {
     this.state = state;
+    this.pusher = pusher || null;
     this.physics = physics;
     this.world = world;
     this.audio = audio;
@@ -38,6 +39,7 @@ export class Game {
   reset(state) {
     this.state = state;
     this.physics.clear();
+    if (this.pusher) this.pusher.reset();
     this.stored = 0;
     this.spawnAcc = 0;
     this.collectCredit = 0;
@@ -95,6 +97,9 @@ export class Game {
         this.physics.release(idx);
       }
     }
+
+    // ---- anti-jam monitoring
+    if (this.pusher) this.pusher.scan(dt);
 
     // ---- collector: pulls the object nearest to the exit into the vacuum hood
     this.collectCredit = Math.min(2, this.collectCredit + (E.collectRate(s) * tm / batch) * dt);

@@ -176,3 +176,11 @@ input[type='range'] { width: 130px; accent-color: var(--yellow); height: 28px; }
   .grade-box { padding: 4px 8px; }
   .store-bar { margin-top: 6px; }
 }
+
+/* manual anti-jam button */
+.assist { position: absolute; right: 8px; bottom: 8px; z-index: 6; display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; background: var(--card); color: var(--cyan); font-weight: 800; font-size: 13px; overflow: hidden; box-shadow: 0 0 0 2px var(--line), 0 4px 0 0 var(--line); transition: transform 0.08s, box-shadow 0.08s; }
+.assist .as-ico { width: 12px; height: 12px; background: currentColor; clip-path: polygon(0 35%, 55% 35%, 55% 0, 100% 50%, 55% 100%, 55% 65%, 0 65%); }
+.assist .as-cd { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--cyan); transform-origin: left; transform: scaleX(0); }
+.assist:active:not(.cd), .assist.pressed { transform: translateY(3px); box-shadow: 0 0 0 2px var(--line), 0 1px 0 0 var(--line); }
+.assist.cd { color: var(--muted); }
+.assist.cd .as-cd { background: var(--muted); }

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { L, PEGS, PEG_R, DEFLECTORS, OBJ_R } from './layout.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { L, PEGS, PEG_R, DEFLECTORS, DEFLECTOR_VIS_THICK, COIN_TYPES, SLOT_DEPTH, PISTONS, PISTON_PLATE } from './layout.js';
 import { GRADES } from './economy.js';
 
 const FONT_PIXEL = '"Press Start 2P", monospace';
@@ -121,8 +122,8 @@ export class World {
     this.renderer.setClearColor(0x14182b, 1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x14182b, 38, 80);
-    this.camera = new THREE.PerspectiveCamera(32, 0.5, 0.5, 120);
+    // orthographic 2.5D camera: real 3D scene, no perspective distortion
+    this.camera = new THREE.OrthographicCamera(-5, 5, 8, -8, 0.1, 200);
     this.gm = gradientMap();
     this.pal = {
       body: new THREE.Color(GRADES[0].body), accent: new THREE.Color(GRADES[0].accent),
@@ -205,7 +206,7 @@ export class World {
     this.scene.add(ground);
 
     // --- main frame
-    this._box(6.7, 11.9, 0.3, M.panel, 0, 5.75, -0.55);
+    this._box(6.7, 11.9, 0.3, M.panel, 0, 5.75, -(SLOT_DEPTH / 2 + 0.15));
     for (const sx of [-1, 1]) {
       this._box(0.56, 12.1, 1.3, M.body, sx * 3.28, 5.8, 0);
       this._box(0.12, 12.1, 0.14, M.trim, sx * 3.0, 5.8, 0.68);
@@ -217,21 +218,21 @@ export class World {
     this.baseSign = this._box(3.6, 0.72, 0.05, new THREE.MeshBasicMaterial({ color: 0xffffff }), 0, -0.1, 0.97);
     // sloped belt (visual)
     const f = L.floor;
-    this.belt = new THREE.Mesh(new THREE.BoxGeometry(f.halfLen * 2, f.thick, 1.2), M.belt);
-    this.belt.position.set(0, f.y, 0);
+    this.belt = new THREE.Mesh(new THREE.BoxGeometry(f.halfLen * 2, f.visThick, SLOT_DEPTH + 0.04), M.belt);
+    this.belt.position.set(0, f.y + (f.thick - f.visThick) / 2, 0);
     this.belt.rotation.z = f.ang;
     this.machine.add(this.belt);
     // deflectors
     for (const d of DEFLECTORS) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(d.halfLen * 2, d.thick, 1.2), M.trim);
+      const b = new THREE.Mesh(new THREE.BoxGeometry(d.halfLen * 2, DEFLECTOR_VIS_THICK, SLOT_DEPTH + 0.04), M.trim);
       b.position.set(d.x, d.y, 0); b.rotation.z = d.ang;
       this.machine.add(b);
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(d.halfLen * 2, 0.05, 1.22), M.accent);
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(d.halfLen * 2, 0.05, SLOT_DEPTH + 0.06), M.accent);
       stripe.position.set(d.x, d.y + 0.07, 0); stripe.rotation.z = d.ang;
       this.machine.add(stripe);
     }
     // pegs
-    const pegGeo = new THREE.CylinderGeometry(PEG_R, PEG_R, 1.2, 10);
+    const pegGeo = new THREE.CylinderGeometry(PEG_R, PEG_R, SLOT_DEPTH + 0.04, 14);
     pegGeo.rotateX(Math.PI / 2);
     this.pegs = new THREE.InstancedMesh(pegGeo, M.peg, PEGS.length);
     const mt = new THREE.Matrix4();
@@ -240,16 +241,35 @@ export class World {
     // paddle
     this.paddle = new THREE.Group();
     this.paddle.position.set(L.paddle.x, L.paddle.y, 0);
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(L.paddle.halfLen * 2, 0.18, 1.0), M.copper);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(L.paddle.halfLen * 2, 0.18, SLOT_DEPTH + 0.04), M.copper);
     this.paddle.add(bar);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 1.1, 10).rotateX(Math.PI / 2), M.trim);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, SLOT_DEPTH + 0.1, 12).rotateX(Math.PI / 2), M.trim);
     this.paddle.add(hub);
     for (const sx of [-1, 1]) {
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 1.02), M.accent);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, SLOT_DEPTH + 0.06), M.accent);
       cap.position.x = sx * L.paddle.halfLen;
       this.paddle.add(cap);
     }
     this.machine.add(this.paddle);
+
+    // --- anti-jam pistons: housing outside the wall, port in the wall, rod + pushing head inside the slot
+    this.pistons = PISTONS.map((def) => {
+      const w = -def.dir; // +1 = right wall
+      const g = new THREE.Group();
+      const port = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, SLOT_DEPTH + 0.08), M.dark);
+      port.position.set(w * 3.0, def.y, 0);
+      const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.55, 14).rotateZ(Math.PI / 2), M.trim);
+      housing.position.set(w * 3.55, def.y, 0.56);
+      const capm = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.12, 12).rotateZ(Math.PI / 2), M.accent);
+      capm.position.set(w * 3.86, def.y, 0.56);
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), new THREE.MeshBasicMaterial({ color: 0x3a4a30 }));
+      lamp.position.set(w * 3.55, def.y + 0.36, 0.56);
+      const rod = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 0.1), M.trim);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(PISTON_PLATE.halfX * 2, PISTON_PLATE.halfY * 2, SLOT_DEPTH - 0.02), M.copper);
+      g.add(port, housing, capm, lamp, rod, head);
+      this.machine.add(g);
+      return { def, w, rod, head, lamp };
+    });
 
     // --- top housing + sign + nozzles
     this._box(7.4, 1.25, 1.5, M.body, 0, 11.65, 0);
@@ -384,31 +404,25 @@ export class World {
     }
     this.features[6].add(this.crown);
 
-    // --- falling objects (instanced, one mesh per type)
-    const geos = [
-      new THREE.CylinderGeometry(OBJ_R, OBJ_R, 0.11, 16).rotateX(Math.PI / 2),
-      new THREE.CylinderGeometry(OBJ_R, OBJ_R, 0.15, 16).rotateX(Math.PI / 2),
-      new THREE.BoxGeometry(0.5, 0.3, 0.22),
-      new THREE.OctahedronGeometry(0.3),
-    ];
-    const mats = [
-      this.tm(0xdfe7f2),
-      this.tm(0xffc82e, { emissive: 0x6b4300, emissiveIntensity: 0.6 }),
-      this.tm(0xff9e1a, { emissive: 0x6b2c00, emissiveIntensity: 0.55 }),
-      new THREE.MeshBasicMaterial({ color: 0x66f7ff }),
-    ];
-    this.objMeshes = geos.map((g, i) => {
-      const im = new THREE.InstancedMesh(g, mats[i], this.maxBodies);
+    // --- coins: thin cylinders (axis = Z, facing the camera). Radius / thickness come from COIN_TYPES in layout.js
+    //     and are exactly what the Rapier cylinder colliders use.
+    const pm = new THREE.PMREMGenerator(this.renderer);
+    this.envMap = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    pm.dispose();
+    this.objMeshes = COIN_TYPES.map((c) => {
+      const geo = new THREE.CylinderGeometry(c.radius, c.radius, c.thickness, c.segments, 1);
+      geo.rotateX(Math.PI / 2); // cylinder axis Y -> Z (matches the collider's local rotation)
+      const faces = this._coinFaceTextures(c);
+      const side = new THREE.MeshStandardMaterial({ color: c.edge, metalness: c.metal, roughness: c.rough + 0.1, envMap: this.envMap, envMapIntensity: 0.9 });
+      const face = new THREE.MeshStandardMaterial({ map: faces.map, bumpMap: faces.bump, bumpScale: 2.2, metalness: c.metal, roughness: c.rough, envMap: this.envMap, envMapIntensity: 1.0 });
+      if (c.key === 'gem') { face.emissive = new THREE.Color(0x0a5560); face.emissiveIntensity = 0.7; }
+      const im = new THREE.InstancedMesh(geo, [side, face, face], this.maxBodies); // groups: edge, front cap, back cap
       im.frustumCulled = false;
       im.count = 0;
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       this.scene.add(im);
       return im;
     });
-    // little rim on the coins (second smaller disc) for a minted look
-    this.coinRim = new THREE.InstancedMesh(new THREE.CylinderGeometry(OBJ_R * 0.62, OBJ_R * 0.62, 0.135, 12).rotateX(Math.PI / 2), this.tm(0xaab6c8), this.maxBodies);
-    this.coinRim.frustumCulled = false; this.coinRim.count = 0; this.coinRim.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.scene.add(this.coinRim);
     this._typeCount = [0, 0, 0, 0];
     this.refreshTextures();
   }
@@ -476,32 +490,74 @@ export class World {
     return L.nozzleXs[i];
   }
 
-  // keep the whole playfield visible for any viewport, leaving room under the HUD overlay
+  // embossed face artwork (colour map + matching bump map) for a coin type
+  _coinFaceTextures(c) {
+    const N = 128;
+    const mk = (bump) => {
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = N;
+      const g = cv.getContext('2d');
+      const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+      const mid = N / 2;
+      const ink = bump ? '#ffffff' : '#00000033';
+      g.fillStyle = bump ? '#808080' : hex(c.faceColor);
+      g.fillRect(0, 0, N, N);
+      // raised rim + inner groove
+      g.lineWidth = N * 0.07;
+      g.strokeStyle = bump ? '#ffffff' : hex(c.edge);
+      g.beginPath(); g.arc(mid, mid, N * 0.43, 0, Math.PI * 2); g.stroke();
+      g.lineWidth = N * 0.018;
+      g.strokeStyle = bump ? '#303030' : '#00000040';
+      g.beginPath(); g.arc(mid, mid, N * 0.34, 0, Math.PI * 2); g.stroke();
+      // symbol
+      g.fillStyle = bump ? '#ffffff' : hex(c.edge);
+      g.strokeStyle = g.fillStyle;
+      if (c.face === 'star') {
+        g.beginPath();
+        for (let i = 0; i < 10; i++) { const r = i % 2 ? N * 0.1 : N * 0.24, a = -Math.PI / 2 + i * Math.PI / 5; g.lineTo(mid + Math.cos(a) * r, mid + Math.sin(a) * r); }
+        g.closePath(); g.fill();
+      } else if (c.face === 'crown') {
+        g.beginPath();
+        g.moveTo(mid - N * 0.22, mid + N * 0.14); g.lineTo(mid - N * 0.22, mid - N * 0.12); g.lineTo(mid - N * 0.1, mid); g.lineTo(mid, mid - N * 0.18);
+        g.lineTo(mid + N * 0.1, mid); g.lineTo(mid + N * 0.22, mid - N * 0.12); g.lineTo(mid + N * 0.22, mid + N * 0.14); g.closePath(); g.fill();
+      } else if (c.face === 'gem') {
+        g.beginPath(); g.moveTo(mid, mid - N * 0.22); g.lineTo(mid + N * 0.2, mid); g.lineTo(mid, mid + N * 0.22); g.lineTo(mid - N * 0.2, mid); g.closePath(); g.fill();
+      } else {
+        g.font = `bold ${N * 0.42}px "Press Start 2P", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText('$', mid, mid + N * 0.02);
+      }
+      const t = new THREE.CanvasTexture(cv);
+      t.colorSpace = bump ? THREE.NoColorSpace : THREE.SRGBColorSpace;
+      t.anisotropy = 4;
+      return t;
+    };
+    return { map: mk(false), bump: mk(true) };
+  }
+
+  // orthographic frustum that keeps the whole playfield visible and leaves room under the HUD overlay
   fit(cssW, cssH, aspect, hudFrac = 0) {
     const cam = this.camera;
-    cam.aspect = aspect;
-    const fov = THREE.MathUtils.degToRad(cam.fov);
-    const t = Math.tan(fov / 2);
     hudFrac = Math.max(0, Math.min(0.45, hudFrac));
     const needH = 15.4; // machine height incl. crown/smokestack + base (world units)
-    const needW = 9.6; // incl. side pipe
-    const dV = needH / (1 - hudFrac) / 2 / t;
-    const dH = needW / 2 / (t * aspect);
-    this._camDist = Math.max(dV, dH);
-    const visH = 2 * this._camDist * t;
-    this._cy = 6.1 + (visH * hudFrac) / 2; // looking higher pushes the machine below the HUD
+    const needW = 9.8; // incl. side pipes / piston housings
+    let H = needH / (1 - hudFrac);
+    let W = H * aspect;
+    if (W < needW) { W = needW; H = W / aspect; }
+    cam.left = -W / 2; cam.right = W / 2; cam.top = H / 2; cam.bottom = -H / 2;
     cam.updateProjectionMatrix();
+    this._cy = 6.1 + (H * hudFrac) / 2; // aiming higher pushes the machine below the HUD
     this._placeCam(0);
   }
 
   _placeCam(shakeAmt) {
-    const d = this._camDist;
-    const pitch = 0.1;
+    // slightly angled front view: a little yaw/pitch lets the side walls and coin thickness read as 3D
+    const yaw = 0.2, pitch = 0.14, d = 60;
     const cy = this._cy;
     const sx = (Math.random() - 0.5) * shakeAmt;
     const sy = (Math.random() - 0.5) * shakeAmt;
-    this.camera.position.set(sx, cy + Math.sin(pitch) * d * 0.5 + sy, Math.cos(pitch) * d);
-    this.camera.lookAt(0, cy, 0);
+    this.camera.position.set(Math.sin(yaw) * Math.cos(pitch) * d + sx, cy + Math.sin(pitch) * d + sy, Math.cos(yaw) * Math.cos(pitch) * d);
+    this.camera.lookAt(sx, cy + sy, 0);
+    this.camera.updateMatrixWorld(true);
   }
 
   project(x, y, z, w, h) {
@@ -509,55 +565,76 @@ export class World {
     return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h };
   }
 
+  // screen (NDC) -> point on the z = 0 play plane (works for orthographic and perspective cameras)
   unprojectToPlane(nx, ny) {
-    const v = new THREE.Vector3(nx, ny, 0.5).unproject(this.camera);
-    const dir = v.sub(this.camera.position).normalize();
-    const t = -this.camera.position.z / dir.z;
-    return { x: this.camera.position.x + dir.x * t, y: this.camera.position.y + dir.y * t };
+    const a = new THREE.Vector3(nx, ny, -1).unproject(this.camera);
+    const b = new THREE.Vector3(nx, ny, 1).unproject(this.camera);
+    const dir = b.sub(a);
+    const t = -a.z / dir.z;
+    return { x: a.x + dir.x * t, y: a.y + dir.y * t };
   }
 
-  // write instance matrices for active objects
+  // write instance matrices (full 3D rotation) for every coin in play
   syncObjects(physics) {
-    const counts = [0, 0, 0, 0];
+    const counts = new Array(this.objMeshes.length).fill(0);
     const arrs = this.objMeshes.map((m) => m.instanceMatrix.array);
-    const rim = this.coinRim.instanceMatrix.array;
-    let rc = 0;
-    const put = (arr, i, x, y, z, a) => {
-      const c = Math.cos(a), s = Math.sin(a), o = i * 16;
-      arr[o] = c; arr[o + 1] = s; arr[o + 2] = 0; arr[o + 3] = 0;
-      arr[o + 4] = -s; arr[o + 5] = c; arr[o + 6] = 0; arr[o + 7] = 0;
-      arr[o + 8] = 0; arr[o + 9] = 0; arr[o + 10] = 1; arr[o + 11] = 0;
+    const put = (arr, i, x, y, z, q, sc) => {
+      const o = i * 16;
+      const x2 = q.x + q.x, y2 = q.y + q.y, z2 = q.z + q.z;
+      const xx = q.x * x2, xy = q.x * y2, xz = q.x * z2, yy = q.y * y2, yz = q.y * z2, zz = q.z * z2, wx = q.w * x2, wy = q.w * y2, wz = q.w * z2;
+      arr[o] = (1 - (yy + zz)) * sc; arr[o + 1] = (xy + wz) * sc; arr[o + 2] = (xz - wy) * sc; arr[o + 3] = 0;
+      arr[o + 4] = (xy - wz) * sc; arr[o + 5] = (1 - (xx + zz)) * sc; arr[o + 6] = (yz + wx) * sc; arr[o + 7] = 0;
+      arr[o + 8] = (xz + wy) * sc; arr[o + 9] = (yz - wx) * sc; arr[o + 10] = (1 - (xx + yy)) * sc; arr[o + 11] = 0;
       arr[o + 12] = x; arr[o + 13] = y; arr[o + 14] = z; arr[o + 15] = 1;
     };
     for (const idx of physics.active) {
       const s = physics.slots[idx];
       const p = s.body.translation();
-      const q = s.body.rotation();
-      const a = 2 * Math.atan2(q.z, q.w);
-      put(arrs[s.type], counts[s.type]++, p.x, p.y, s.zj, a);
-      if (s.type === 0) put(rim, rc++, p.x, p.y, s.zj, a);
+      put(arrs[s.type], counts[s.type]++, p.x, p.y, p.z, s.body.rotation(), 1);
     }
-    // objects being sucked into the collector: arc to the hood, shrinking
+    // coins being collected: arc into the hood, spinning and shrinking
     for (const idx of physics.sucking) {
       const s = physics.slots[idx];
       const k = Math.min(1, s.st);
       const e = k * k * (3 - 2 * k);
       const x = s.sx + (L.hood.x - s.sx) * e;
       const y = s.sy + (L.hood.y - s.sy) * e + Math.sin(k * Math.PI) * 0.5;
-      const sc = 1 - 0.55 * e;
+      const half = k * 9;
+      const sz = Math.sin(half), cz = Math.cos(half), q0 = s.q;
+      const q = { x: cz * q0.x + sz * q0.y * -1, y: 0, z: 0, w: 0 };
+      // q = qz(half*2) * q0
+      const a = half * 2, qs = Math.sin(a / 2), qc = Math.cos(a / 2);
+      q.w = qc * q0.w - qs * q0.z;
+      q.x = qc * q0.x - qs * q0.y;
+      q.y = qc * q0.y + qs * q0.x;
+      q.z = qc * q0.z + qs * q0.w;
       const t = s.type;
-      const o = counts[t]++;
-      put(arrs[t], o, x, y, 0.15, s.st * 14);
-      const m = arrs[t];
-      for (let r = 0; r < 3; r++) { m[o * 16 + r * 4] *= sc; m[o * 16 + r * 4 + 1] *= sc; m[o * 16 + r * 4 + 2] *= sc; }
+      put(arrs[t], counts[t]++, x, y, (s.sz || 0) * (1 - e) + 0.12 * e, q, 1 - 0.55 * e);
     }
     this.objMeshes.forEach((m, i) => { m.count = counts[i]; m.instanceMatrix.needsUpdate = true; });
-    this.coinRim.count = rc;
-    this.coinRim.instanceMatrix.needsUpdate = true;
   }
 
-  update(dt, physics, state) {
+  // animate the anti-jam pistons from the pusher state
+  updatePistons(pusher) {
+    if (!pusher) return;
+    this.pistons.forEach((v, i) => {
+      const p = pusher.pistons[i];
+      const w = v.w;
+      const front = w * (PISTON_PLATE.restFront - p.ext);
+      const headX = front + w * PISTON_PLATE.halfX;
+      v.head.position.set(headX, v.def.y, 0);
+      const wallX = w * 3.25;
+      const len = Math.max(0.01, Math.abs(wallX - headX));
+      v.rod.scale.x = len;
+      v.rod.position.set((wallX + headX) / 2, v.def.y, 0);
+      const active = p.phase !== 'idle';
+      v.lamp.material.color.setHex(p.phase === 'wait' ? 0xffe066 : active ? 0xff9e1a : p.cool > 0 ? 0x4a3a22 : 0x4cff7a);
+    });
+  }
+
+  update(dt, physics, state, pusher) {
     this.t += dt;
+    this.updatePistons(pusher);
     // palette easing
     const k = 1 - Math.pow(0.0008, dt);
     for (const key of Object.keys(this.pal)) this.pal[key].lerp(this.palTarget[key], k);

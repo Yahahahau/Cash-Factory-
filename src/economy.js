@@ -82,6 +82,8 @@ export function newState() {
       objectsCollected: 0,
       upgradesBought: 0,
       taps: 0,
+      autoPushes: 0,
+      manualPushes: 0,
       playSeconds: 0,
       offlineEarned: 0,
     },
