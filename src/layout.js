@@ -116,7 +116,10 @@ function zigzag(n, tops, o = {}) {
   }
   if (o.gate !== undefined) {
     const next = tops[o.gate];
-    def.gates.push({ id: 'gate1', x0: 0.55, x1: 1.75, y0: next + 1.0, y1: next + 1.75 });
+    // the field spans the whole drop: from just above the lower platform up to the upper platform's top, starting
+    // right at the upper platform's free end so every coin that falls off it passes through
+    const upper = tops[o.gate - 1] !== undefined ? tops[o.gate - 1] : next + 2.4;
+    def.gates.push({ id: 'gate1', x0: 0.95, x1: 2.15, y0: next + 0.12, y1: upper });
   }
   return def;
 }

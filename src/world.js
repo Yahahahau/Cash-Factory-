@@ -516,15 +516,16 @@ export class World {
     for (const gd of def.gates) {
       const gg = new THREE.Group();
       const w = gd.x1 - gd.x0, h = gd.y1 - gd.y0;
-      this._box(0.1, h + 0.2, 0.14, M.greenDark, gd.x0, (gd.y0 + gd.y1) / 2, 0, gg);
-      this._box(0.1, h + 0.2, 0.14, M.greenDark, gd.x1, (gd.y0 + gd.y1) / 2, 0, gg);
+      // posts and field share the same depth plane so they line up exactly in the camera view
+      this._box(0.1, h, 0.1, M.greenDark, gd.x0, (gd.y0 + gd.y1) / 2, 0.4, gg);
+      this._box(0.1, h, 0.1, M.greenDark, gd.x1, (gd.y0 + gd.y1) / 2, 0.4, gg);
       const field = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M.glass.clone());
       this._geos.push(field.geometry);
       field.position.set((gd.x0 + gd.x1) / 2, (gd.y0 + gd.y1) / 2, 0.4);
       gg.add(field);
       const lab = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.31), new THREE.MeshBasicMaterial({ map: labelTex('x2', '#1f9a3c', '#ffffff') }));
       this._geos.push(lab.geometry);
-      lab.position.set((gd.x0 + gd.x1) / 2, gd.y1 + 0.3, 0.45);
+      lab.position.set((gd.x0 + gd.x1) / 2, (gd.y0 + gd.y1) / 2, 0.46);
       gg.add(lab);
       g.add(gg);
       V.gates.push({ def: gd, field });
