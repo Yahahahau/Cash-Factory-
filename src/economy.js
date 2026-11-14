@@ -1,163 +1,106 @@
 // Pure economy logic (no DOM / three). Shared by the game, the simulator and tests.
+// Coin-pusher incremental: cash + gems, Coin/s, machine upgrades, stage targets, combo, offline income.
 
-export const MAX_OFFLINE_SECONDS_HARD = 12 * 3600; // never above 12h
-export const OFFLINE_EFFICIENCY = 0.5; // offline income is 50% of online passive income
-export const MAX_SPAWN_RATE = 120; // logical objects/s (physics uses batching, so this is not a body count)
+export const MAX_OFFLINE_SECONDS_HARD = 12 * 3600;
+export const OFFLINE_EFFICIENCY = 0.5;
 
-export const GRADES = [
-  {
-    id: 1, name: 'โรงงานพื้นฐาน', en: 'Basic Factory', cost: 0, levelCap: 10,
-    valueMult: 1, spawnMult: 1, collectMult: 1, capBonus: 0,
-    fx: 'เครื่องจักรสีฟ้า เหรียญเงิน',
-    body: 0x3b8fd9, accent: 0xffd23f, trim: 0xc8d4e3, light: 0xfff2d0,
-  },
-  {
-    id: 2, name: 'โรงงานปรับปรุง', en: 'Improved Factory', cost: 3500, levelCap: 20,
-    valueMult: 3, spawnMult: 1.15, collectMult: 1.1, capBonus: 12,
-    fx: 'ท่อทองแดง ไฟกะพริบ',
-    body: 0x3fb86b, accent: 0xffb02e, trim: 0xd9e4d0, light: 0xfff0c0,
-  },
-  {
-    id: 3, name: 'โรงงานขั้นสูง', en: 'Advanced Factory', cost: 300000, levelCap: 30,
-    valueMult: 9, spawnMult: 1.3, collectMult: 1.2, capBonus: 24,
-    fx: 'ปลดล็อกอัญมณี ปล่องควัน',
-    body: 0x8a5cf0, accent: 0x5ef2e0, trim: 0xe2d6ff, light: 0xe8dcff,
-  },
-  {
-    id: 4, name: 'โรงงานพรีเมียม', en: 'Premium Factory', cost: 5.0e7, levelCap: 40,
-    valueMult: 27, spawnMult: 1.5, collectMult: 1.35, capBonus: 40,
-    fx: 'ขอบทอง สปอตไลท์',
-    body: 0xe0503c, accent: 0xffe066, trim: 0xffe8c0, light: 0xffe0b0,
-  },
-  {
-    id: 5, name: 'โรงงานอีลีท', en: 'Elite Factory', cost: 4.0e9, levelCap: 50,
-    valueMult: 81, spawnMult: 1.75, collectMult: 1.55, capBonus: 60,
-    fx: 'ลำแสงพลังงาน ประกายดาว',
-    body: 0x1fb5b0, accent: 0xff6ad5, trim: 0xd0fffa, light: 0xc8fff6,
-  },
-  {
-    id: 6, name: 'โรงงานมาสเตอร์', en: 'Master Factory', cost: 6.0e11, levelCap: 60,
-    valueMult: 243, spawnMult: 2, collectMult: 1.8, capBonus: 90,
-    fx: 'มงกุฎทอง ฝนประกาย',
-    body: 0xf2b020, accent: 0xfff6a8, trim: 0xfff2c4, light: 0xfff6d8,
-  },
-];
+// coin types: 0 bronze, 1 silver, 2 gold, 3 rare (crystal coin, also pays 1 gem)
+export const COIN_VALUES = [1, 3, 10, 25];
+export const COIN_NAMES = ['เหรียญทองแดง', 'เหรียญเงิน', 'เหรียญทอง', 'เหรียญหายาก'];
 
-export const CORE_KEYS = ['production', 'value', 'storage', 'efficiency'];
-export const UPGRADE_KEYS = [...CORE_KEYS, 'automation'];
+// ---- machines (levels are per machine id and persist across stages) -------
+export const MACHINE_TYPES = {
+  pusher: { name: 'ลูกสูบดันเหรียญ', base: 5, growth: 1.5, max: 12 },
+  conveyor: { name: 'สายพานลำเลียง', base: 20, growth: 1.55, max: 10 },
+  blower: { name: 'พัดลมเป่าลม', base: 25, growth: 1.55, max: 10 },
+  magnet: { name: 'แม่เหล็กดูดเหรียญ', base: 40, growth: 1.6, max: 10 },
+  launcher: { name: 'เครื่องดีดเหรียญ', base: 50, growth: 1.6, max: 10 },
+};
+export const MACHINES = {
+  pusherA: { type: 'pusher', mult: 1, name: 'ลูกสูบ A' },
+  pusherB: { type: 'pusher', mult: 1, name: 'ลูกสูบ B' },
+  pusherC: { type: 'pusher', mult: 2, name: 'ลูกสูบ C' },
+  pusherD: { type: 'pusher', mult: 3, name: 'ลูกสูบ D' },
+  conv1: { type: 'conveyor', mult: 1, name: 'สายพาน' },
+  fan1: { type: 'blower', mult: 1, name: 'พัดลมเป่าลม' },
+  magnet1: { type: 'magnet', mult: 1, name: 'แม่เหล็ก' },
+  launch1: { type: 'launcher', mult: 1, name: 'เครื่องดีด' },
+};
+export const MACHINE_IDS = Object.keys(MACHINES);
 
-export const UPGRADES = {
-  production: { name: 'ความเร็วการผลิต', icon: 'prod', base: 12, growth: 1.29 },
-  value: { name: 'มูลค่าวัตถุ', icon: 'value', base: 20, growth: 1.35 },
-  storage: { name: 'ความจุคลัง', icon: 'store', base: 30, growth: 1.27 },
-  efficiency: { name: 'ประสิทธิภาพการเก็บ', icon: 'eff', base: 45, growth: 1.31 },
-  automation: { name: 'ระบบอัตโนมัติ', icon: 'auto', base: 600, growth: 6, max: 5 },
+// ---- global upgrades ------------------------------------------------------
+export const GLOBALS = {
+  rate: { name: 'เหรียญ/วินาที', base: 3, growth: 1.17, max: 80 },
+  capacity: { name: 'ความจุเหรียญสูงสุด', base: 40, growth: 1.34, max: 20 },
+  rare: { name: 'โอกาสเหรียญหายาก', base: 80, growth: 1.42, max: 15 },
 };
 
-export const AUTOMATION_FEATURES = [
-  'ยังไม่ปลดล็อก',
-  'หัวจ่ายที่ 2',
-  'ระบบคัดทอง (ของมีค่าเพิ่ม)',
-  'หัวจ่ายที่ 3',
-  'แม่เหล็กเก็บเร็ว +25%',
-  'โหมดเทอร์โบอัตโนมัติ',
-];
-
-// Object types: base values in "units" (multiplied by value upgrades and grade).
-export const OBJECT_TYPES = [
-  { id: 0, key: 'coin', value: 1 },
-  { id: 1, key: 'gold', value: 4 },
-  { id: 2, key: 'bar', value: 15 },
-  { id: 3, key: 'gem', value: 60 },
-];
-
 export function newState() {
+  const machines = {};
+  for (const id of MACHINE_IDS) machines[id] = 0;
   return {
-    money: 0,
-    grade: 1,
-    levels: { production: 0, value: 0, storage: 0, efficiency: 0, automation: 0 },
+    cash: 10,
+    gems: 0,
+    stage: 1,
+    progress: 0, // coins collected in the current stage
+    levels: { rate: 0, capacity: 0, rare: 0 },
+    machines,
     stats: {
       totalEarned: 0,
-      objectsProduced: 0,
-      objectsCollected: 0,
+      coinsCollected: 0,
+      coinsDropped: 0,
       upgradesBought: 0,
-      taps: 0,
+      manualDrops: 0,
       autoPushes: 0,
       manualPushes: 0,
+      stagesCleared: 0,
+      bestCombo: 0,
       playSeconds: 0,
       offlineEarned: 0,
     },
-    unlocked: ['grade1'],
     settings: { pixel: true, sfx: 0.7, music: 0.35, quality: 'high' },
     lastSaved: Date.now(),
   };
 }
 
-export function gradeOf(state) {
-  return GRADES[Math.max(0, Math.min(GRADES.length - 1, state.grade - 1))];
+// ---- stages ---------------------------------------------------------------
+const TARGETS = [50, 250, 300, 400, 550, 750];
+export function stageTarget(stage) {
+  if (stage <= TARGETS.length) return TARGETS[stage - 1];
+  return Math.round((TARGETS[TARGETS.length - 1] * Math.pow(1.22, stage - TARGETS.length)) / 10) * 10;
+}
+export function stageValueMult(stage) {
+  return 1 + 0.65 * (stage - 1);
+}
+export function stageReward(stage) {
+  return { cash: Math.round(30 * stage * (1 + 0.6 * stage)), gems: 2 + Math.floor(stage / 2) };
 }
 
-export function levelCap(state) {
-  return gradeOf(state).levelCap;
+// ---- derived stats --------------------------------------------------------
+export function spawnRate(s) {
+  return 0.45 + 0.3 * s.levels.rate; // coins per second dropped by the dispenser
 }
-
-export function upgradeMaxLevel(state, key) {
-  if (key === 'automation') return UPGRADES.automation.max;
-  return levelCap(state);
+export function capacity(s) {
+  return 30 + 8 * s.levels.capacity; // simultaneously active coins (also limited by graphics quality)
 }
-
-export function upgradeCost(key, level) {
-  const u = UPGRADES[key];
-  return Math.ceil(u.base * Math.pow(u.growth, level));
+export function maxCharges(s) {
+  return 3 + Math.floor(s.levels.capacity / 3);
 }
+export const CHARGE_TIME = 1.2;
 
-// ---- derived stats -------------------------------------------------------
-
-export function nozzleCount(state) {
-  const a = state.levels.automation;
-  return 1 + (a >= 1 ? 1 : 0) + (a >= 3 ? 1 : 0);
+export function typeProbabilities(s) {
+  const r = s.levels.rare;
+  const rare = Math.min(0.1, 0.01 + 0.006 * r);
+  const gold = Math.min(0.2, 0.05 + 0.012 * r);
+  const silver = Math.min(0.3, 0.2 + 0.01 * r);
+  return [1 - rare - gold - silver, silver, gold, rare];
 }
-
-export function spawnRate(state) {
-  const g = gradeOf(state);
-  const nozzleBonus = 1 + 0.4 * (nozzleCount(state) - 1);
-  return Math.min(MAX_SPAWN_RATE, (1 + 0.2 * state.levels.production) * g.spawnMult * nozzleBonus);
+export function avgBaseValue(s) {
+  const p = typeProbabilities(s);
+  return COIN_VALUES.reduce((a, v, i) => a + v * p[i], 0);
 }
-
-export function collectRate(state) {
-  const g = gradeOf(state);
-  const magnet = state.levels.automation >= 4 ? 1.25 : 1;
-  return (1.5 + 0.4 * state.levels.efficiency) * g.collectMult * magnet;
-}
-
-export function capacity(state) {
-  return Math.round(30 + 8 * state.levels.storage + gradeOf(state).capBonus);
-}
-
-export function valueMultiplier(state) {
-  return Math.pow(1.17, state.levels.value) * gradeOf(state).valueMult;
-}
-
-export function offlineCapSeconds(state) {
-  const hours = 2 + 0.15 * state.levels.storage;
-  return Math.min(MAX_OFFLINE_SECONDS_HARD, hours * 3600);
-}
-
-export function typeProbabilities(state) {
-  const sorting = state.levels.automation >= 2;
-  const gems = state.grade >= 3;
-  let p = sorting ? [0.58, 0.28, 0.12, 0.02] : [0.7, 0.22, 0.07, 0.01];
-  if (!gems) p = [p[0], p[1], p[2] + p[3], 0];
-  return p;
-}
-
-export function avgBaseValue(state) {
-  const p = typeProbabilities(state);
-  return OBJECT_TYPES.reduce((s, t, i) => s + t.value * p[i], 0);
-}
-
-export function pickType(state, rnd = Math.random) {
-  const p = typeProbabilities(state);
+export function pickType(s, rnd = Math.random) {
+  const p = typeProbabilities(s);
   let r = rnd();
   for (let i = 0; i < p.length; i++) {
     r -= p[i];
@@ -166,114 +109,144 @@ export function pickType(state, rnd = Math.random) {
   return 0;
 }
 
-export function throughput(state) {
-  return Math.min(spawnRate(state), collectRate(state));
+export function comboBonus(combo) {
+  return 1 + Math.min(0.5, Math.floor(combo / 5) * 0.05); // +5% per 5 combo, max +50%
+}
+export function coinValue(s, type, mult = 1, combo = 0) {
+  return COIN_VALUES[type] * stageValueMult(s.stage) * mult * comboBonus(combo);
 }
 
-export function incomePerSec(state) {
-  return throughput(state) * avgBaseValue(state) * valueMultiplier(state);
+// machine effects ------------------------------------------------------------
+export function machineLevel(s, id) {
+  return s.machines[id] || 0;
+}
+export function pusherParams(level) {
+  // level 0: only the emergency anti-jam stroke (no regular cycling)
+  if (level <= 0) return { active: false, interval: Infinity, out: 1.0, back: 1.2 };
+  return { active: true, interval: Math.max(1.6, 4.6 - 0.3 * level), out: Math.max(0.5, 1.25 - 0.07 * level), back: Math.max(0.7, 1.4 - 0.06 * level) };
+}
+export function conveyorSpeed(level) {
+  return level <= 0 ? 0 : 0.55 + 0.22 * level;
+}
+export function blowerForce(level) {
+  return level <= 0 ? 0 : 3 + 1.1 * level; // m/s^2 applied to coins in the airstream
+}
+export function magnetForce(level) {
+  return level <= 0 ? 0 : 4 + 1.5 * level;
+}
+export function launcherParams(level) {
+  return level <= 0 ? { active: false } : { active: true, power: 4.2 + 0.35 * level, cooldown: Math.max(1.2, 3.2 - 0.18 * level) };
 }
 
-export function bottleneck(state) {
-  return spawnRate(state) <= collectRate(state) ? 'production' : 'efficiency';
+// ---- costs / buying ---------------------------------------------------------
+export function machineCost(id, level) {
+  const m = MACHINES[id];
+  const t = MACHINE_TYPES[m.type];
+  return Math.ceil(t.base * m.mult * Math.pow(t.growth, level));
+}
+export function globalCost(key, level) {
+  const g = GLOBALS[key];
+  return Math.ceil(g.base * Math.pow(g.growth, level));
 }
 
-// ---- purchasing ----------------------------------------------------------
-
-export function upgradeInfo(state, key) {
-  const lvl = state.levels[key];
-  const max = upgradeMaxLevel(state, key);
-  const cost = upgradeCost(key, lvl);
+// uniform description of any purchasable: machine id or global key
+export function upgradeInfo(s, key) {
+  const isMachine = !!MACHINES[key];
+  const lvl = isMachine ? machineLevel(s, key) : s.levels[key];
+  const max = isMachine ? MACHINE_TYPES[MACHINES[key].type].max : GLOBALS[key].max;
+  const cost = isMachine ? machineCost(key, lvl) : globalCost(key, lvl);
   const atMax = lvl >= max;
-  let locked = null;
-  if (key === 'automation' && !atMax && lvl + 1 > state.grade) {
-    locked = `ต้องการโรงงานเกรด ${lvl + 1}`;
-  }
-  return { key, lvl, max, cost, atMax, locked, canBuy: !atMax && !locked && state.money >= cost };
+  const name = isMachine ? MACHINES[key].name : GLOBALS[key].name;
+  const title = isMachine ? MACHINE_TYPES[MACHINES[key].type].name : GLOBALS[key].name;
+  return { key, isMachine, lvl, max, cost, atMax, name, title, canBuy: !atMax && s.cash >= cost };
 }
 
-export function buyUpgrade(state, key) {
-  const info = upgradeInfo(state, key);
+export function buyUpgrade(s, key) {
+  const info = upgradeInfo(s, key);
   if (!info.canBuy) return false;
-  state.money -= info.cost;
-  state.levels[key] += 1;
-  state.stats.upgradesBought += 1;
+  s.cash -= info.cost;
+  if (info.isMachine) s.machines[key] += 1;
+  else s.levels[key] += 1;
+  s.stats.upgradesBought += 1;
   return true;
 }
 
-export function previewAfter(state, key) {
-  const s = JSON.parse(JSON.stringify(state));
-  s.levels[key] += 1;
-  return s;
-}
+const f1 = (n) => (n >= 100 ? n.toFixed(0) : n.toFixed(1));
 
-export function effectText(state, key) {
-  const next = previewAfter(state, key);
-  const f1 = (n) => (n >= 100 ? n.toFixed(0) : n.toFixed(1));
-  switch (key) {
-    case 'production':
-      return `ผลิต ${f1(spawnRate(state))} → ${f1(spawnRate(next))} ชิ้น/วิ`;
-    case 'value':
-      return `มูลค่า ×${fmtNum(valueMultiplier(state))} → ×${fmtNum(valueMultiplier(next))}`;
-    case 'storage':
-      return `ความจุ ${capacity(state)} → ${capacity(next)} ชิ้น`;
-    case 'efficiency':
-      return `เก็บ ${f1(collectRate(state))} → ${f1(collectRate(next))} ชิ้น/วิ`;
-    case 'automation':
-      return AUTOMATION_FEATURES[Math.min(5, state.levels.automation + 1)];
-    default:
-      return '';
+// text describing what the next level changes
+export function effectText(s, key) {
+  const info = upgradeInfo(s, key);
+  if (info.atMax) return 'ระดับสูงสุดแล้ว';
+  const L = info.lvl;
+  if (!info.isMachine) {
+    if (key === 'rate') return `ปล่อยเหรียญ ${f1(0.45 + 0.3 * L)} → ${f1(0.45 + 0.3 * (L + 1))} เหรียญ/วินาที`;
+    if (key === 'capacity') return `เหรียญพร้อมกัน ${30 + 8 * L} → ${30 + 8 * (L + 1)} · ปุ่มปล่อยเก็บได้ ${3 + Math.floor(L / 3)} → ${3 + Math.floor((L + 1) / 3)}`;
+    const a = typeProbabilities(s)[3] * 100;
+    const n = JSON.parse(JSON.stringify(s));
+    n.levels.rare += 1;
+    return `เหรียญหายาก ${a.toFixed(1)}% → ${(typeProbabilities(n)[3] * 100).toFixed(1)}%`;
   }
-}
-
-// ---- grades --------------------------------------------------------------
-
-export function nextGrade(state) {
-  return GRADES[state.grade] || null; // GRADES[state.grade] is grade (state.grade + 1)
-}
-
-export function gradeRequirements(state) {
-  const next = nextGrade(state);
-  if (!next) return null;
-  const need = Math.ceil(levelCap(state) * 0.8);
-  const reqs = [
-    { label: `เงิน ${fmtMoney(next.cost)}`, have: state.money, need: next.cost, ok: state.money >= next.cost, money: true },
-  ];
-  for (const k of CORE_KEYS) {
-    reqs.push({
-      label: `${UPGRADES[k].name} Lv.${need}`,
-      have: state.levels[k], need, ok: state.levels[k] >= need,
-    });
+  const type = MACHINES[key].type;
+  if (type === 'pusher') {
+    const a = pusherParams(L), b = pusherParams(L + 1);
+    return L === 0 ? `เปิดใช้งาน: ดันทุก ${f1(b.interval)} วิ` : `ดันทุก ${f1(a.interval)} → ${f1(b.interval)} วิ · เร็วขึ้น`;
   }
-  return { next, reqs, ok: reqs.every((r) => r.ok) };
+  if (type === 'conveyor') return L === 0 ? `เปิดใช้งาน: ความเร็ว ${f1(conveyorSpeed(1))} ม./วิ` : `ความเร็ว ${f1(conveyorSpeed(L))} → ${f1(conveyorSpeed(L + 1))} ม./วิ`;
+  if (type === 'blower') return L === 0 ? `เปิดใช้งาน: แรงลม ${f1(blowerForce(1))}` : `แรงลม ${f1(blowerForce(L))} → ${f1(blowerForce(L + 1))}`;
+  if (type === 'magnet') return L === 0 ? `เปิดใช้งาน: แรงดูด ${f1(magnetForce(1))}` : `แรงดูด ${f1(magnetForce(L))} → ${f1(magnetForce(L + 1))}`;
+  if (type === 'launcher') {
+    const b = launcherParams(L + 1);
+    return L === 0 ? `เปิดใช้งาน: ดีดแรง ${f1(b.power)}` : `แรงดีด ${f1(launcherParams(L).power)} → ${f1(b.power)}`;
+  }
+  return '';
 }
 
-export function upgradeGrade(state) {
-  const r = gradeRequirements(state);
-  if (!r || !r.ok) return false;
-  state.money -= r.next.cost;
-  state.grade += 1;
-  const tag = 'grade' + state.grade;
-  if (!state.unlocked.includes(tag)) state.unlocked.push(tag);
-  return true;
+// ---- stage completion ---------------------------------------------------------
+export function addProgress(s, n) {
+  s.progress += n;
+}
+export function stageDone(s) {
+  return s.progress >= stageTarget(s.stage);
+}
+export function completeStage(s) {
+  const reward = stageReward(s.stage);
+  s.cash += reward.cash;
+  s.gems += reward.gems;
+  s.stats.totalEarned += reward.cash;
+  s.stats.stagesCleared += 1;
+  s.stage += 1;
+  s.progress = 0;
+  return reward;
 }
 
-// ---- offline -------------------------------------------------------------
-
-export function computeOffline(state, now = Date.now()) {
-  const elapsed = Math.max(0, (now - (state.lastSaved || now)) / 1000);
+// ---- income estimate / offline --------------------------------------------------
+export function activePushers(s) {
+  return ['pusherA', 'pusherB', 'pusherC', 'pusherD'].filter((id) => s.machines[id] > 0).length;
+}
+// coins per second the machine can really process: limited by the drop rate and by the pushers
+export function throughput(s) {
+  const pushCap = 0.6 + 0.9 * s.machines.pusherA + 0.6 * s.machines.pusherB;
+  return activePushers(s) > 0 ? Math.min(spawnRate(s), pushCap) : 0;
+}
+export function incomePerSec(s) {
+  return throughput(s) * avgBaseValue(s) * stageValueMult(s.stage);
+}
+export function offlineCapSeconds(s) {
+  return Math.min(MAX_OFFLINE_SECONDS_HARD, (2 + 0.2 * s.levels.capacity) * 3600);
+}
+export function computeOffline(s, now = Date.now()) {
+  const elapsed = Math.max(0, (now - (s.lastSaved || now)) / 1000);
   if (elapsed < 30) return null;
-  const cap = offlineCapSeconds(state);
+  const cap = offlineCapSeconds(s);
   const counted = Math.min(elapsed, cap);
-  const gain = incomePerSec(state) * counted * OFFLINE_EFFICIENCY;
-  const objects = Math.floor(throughput(state) * counted * OFFLINE_EFFICIENCY);
-  return { elapsed, counted, capped: elapsed > cap, gain, objects };
+  const gain = incomePerSec(s) * counted * OFFLINE_EFFICIENCY;
+  const coins = Math.floor(throughput(s) * counted * OFFLINE_EFFICIENCY);
+  if (gain <= 0) return null;
+  return { elapsed, counted, capped: elapsed > cap, gain, coins };
 }
 
-// ---- formatting ----------------------------------------------------------
-
+// ---- formatting ----------------------------------------------------------------
 const SUFFIX = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
-
 export function fmtNum(n) {
   if (!isFinite(n)) return '∞';
   if (n < 1000) return n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2);
@@ -281,12 +254,13 @@ export function fmtNum(n) {
   const v = n / Math.pow(10, e * 3);
   return (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + SUFFIX[e];
 }
-
-export function fmtMoney(n) {
-  if (n < 1000) return '$' + Math.floor(n);
-  return '$' + fmtNum(n);
+export function fmtCash(n) {
+  if (n < 10000) return String(Math.floor(n));
+  return fmtNum(n);
 }
-
+export function fmtMoney(n) {
+  return '$' + fmtCash(n);
+}
 export function fmtDuration(sec) {
   sec = Math.floor(sec);
   const h = Math.floor(sec / 3600);

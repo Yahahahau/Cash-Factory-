@@ -1,7 +1,8 @@
 // Save / load with localStorage. Falls back to memory when storage is blocked (some WebViews / iframes).
-import { newState, GRADES } from './economy.js';
+// v2 schema = coin-pusher game (the old factory-tycoon v1 save is ignored).
+import { newState, MACHINES, MACHINE_TYPES, GLOBALS } from './economy.js';
 
-export const SAVE_KEY = 'pixelCashFactory.save.v1';
+export const SAVE_KEY = 'pixelCashFactory.save.v2';
 let memoryCopy = null;
 
 function getStorage() {
@@ -15,7 +16,6 @@ function getStorage() {
     return null;
   }
 }
-
 export function storageAvailable() {
   return !!getStorage();
 }
@@ -24,19 +24,15 @@ const num = (v, d = 0, min = 0, max = Number.MAX_VALUE) =>
   typeof v === 'number' && isFinite(v) ? Math.min(max, Math.max(min, v)) : d;
 
 export function sanitize(raw) {
-  const base = newState();
-  if (!raw || typeof raw !== 'object') return base;
-  const s = base;
-  s.money = num(raw.money, 0);
-  s.grade = Math.floor(num(raw.grade, 1, 1, GRADES.length));
-  const cap = GRADES[s.grade - 1].levelCap;
-  for (const k of ['production', 'value', 'storage', 'efficiency']) {
-    s.levels[k] = Math.floor(num(raw.levels && raw.levels[k], 0, 0, cap));
-  }
-  s.levels.automation = Math.floor(num(raw.levels && raw.levels.automation, 0, 0, Math.min(5, s.grade)));
+  const s = newState();
+  if (!raw || typeof raw !== 'object') return s;
+  s.cash = num(raw.cash, s.cash);
+  s.gems = Math.floor(num(raw.gems, 0));
+  s.stage = Math.floor(num(raw.stage, 1, 1, 9999));
+  s.progress = Math.floor(num(raw.progress, 0));
+  for (const k of Object.keys(GLOBALS)) s.levels[k] = Math.floor(num(raw.levels && raw.levels[k], 0, 0, GLOBALS[k].max));
+  for (const id of Object.keys(MACHINES)) s.machines[id] = Math.floor(num(raw.machines && raw.machines[id], 0, 0, MACHINE_TYPES[MACHINES[id].type].max));
   for (const k of Object.keys(s.stats)) s.stats[k] = num(raw.stats && raw.stats[k], 0);
-  s.unlocked = Array.isArray(raw.unlocked) ? raw.unlocked.filter((x) => typeof x === 'string').slice(0, 64) : [];
-  for (let g = 1; g <= s.grade; g++) if (!s.unlocked.includes('grade' + g)) s.unlocked.push('grade' + g);
   const st = raw.settings || {};
   s.settings.pixel = typeof st.pixel === 'boolean' ? st.pixel : true;
   s.settings.sfx = num(st.sfx, 0.7, 0, 1);
@@ -47,7 +43,7 @@ export function sanitize(raw) {
 }
 
 export function serialize(state) {
-  return JSON.stringify({ v: 1, ...state });
+  return JSON.stringify({ v: 2, ...state });
 }
 
 export function save(state) {

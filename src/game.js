@@ -1,171 +1,217 @@
 import * as E from './economy.js';
-import { L } from './layout.js';
+import { getStage } from './layout.js';
 
 const STEP = 1 / 60;
-const SUCK_TIME = 0.26;
+const SUCK_TIME = 0.22;
 
 export class Game {
-  constructor({ state, physics, world, audio, ui, pusher }) {
+  constructor({ state, physics, machines, world, audio, ui }) {
     this.state = state;
-    this.pusher = pusher || null;
     this.physics = physics;
+    this.machines = machines;
     this.world = world;
     this.audio = audio;
     this.ui = ui;
     this.acc = 0;
     this.spawnAcc = 0;
-    this.collectCredit = 0;
-    this.stored = 0; // logical objects currently in the factory
-    this.nozzle = 0;
-    this.limit = 100; // active physical bodies allowed by graphics quality
-    this.bodyRate = 10; // max physical bodies spawned per second
+    this.limit = 100; // active physical coins allowed by graphics quality
+    this.charges = 3; // manual drop charges
+    this.chargeT = 0;
+    this.combo = 0;
+    this.comboT = 0;
     this.floatSum = 0;
     this.floatT = 0;
-    this.turboT = 0;
-    this.turbo = false;
     this.sceneW = 430;
-    this.sceneH = 520;
-    this.lastType = 0;
-    this.measured = 0; // measured money/s (smoothed), for diagnostics
+    this.sceneH = 870;
+    this.escaped = 0;
+    this.stageDef = null;
+    this.stageBusy = 0; // >0 while the stage-clear banner plays
+    this.measured = 0; // measured cash/s (smoothed), for diagnostics
     this._mAcc = 0;
     this._mT = 0;
+    this.charges = E.maxCharges(state);
   }
 
   setQuality(q) {
     this.limit = q.limit;
-    this.bodyRate = q.rate;
+  }
+
+  // (re)build the machine for the current stage
+  loadStage(animate) {
+    const def = getStage(this.state.stage);
+    this.stageDef = def;
+    this.physics.clear();
+    this.physics.buildStage(def);
+    this.machines.setStage(def);
+    this.world.setStage(def, animate);
+    this.ui.setStage && this.ui.setStage(def);
   }
 
   reset(state) {
     this.state = state;
-    this.physics.clear();
-    if (this.pusher) this.pusher.reset();
-    this.stored = 0;
     this.spawnAcc = 0;
-    this.collectCredit = 0;
+    this.combo = 0;
+    this.charges = E.maxCharges(state);
+    this.chargeT = 0;
+    this.stageBusy = 0;
+    this.loadStage(false);
+    this.machines.reset();
   }
 
-  batchSize() {
+  get stored() {
+    return this.physics.active.length;
+  }
+
+  _spawn(manual) {
     const s = this.state;
-    const rate = E.spawnRate(s) * (this.turbo ? 1.5 : 1);
-    return Math.max(1, rate / this.bodyRate, E.capacity(s) / this.limit);
+    const d = this.stageDef.spawn;
+    const type = E.pickType(s);
+    const x = d.x + (Math.random() - 0.5) * 0.24;
+    const idx = this.physics.spawn(x, d.y, type, 1);
+    if (idx < 0) return false;
+    s.stats.coinsDropped++;
+    if (manual) s.stats.manualDrops++;
+    this.world.pipeKick = 1;
+    return true;
+  }
+
+  // manual drop button
+  drop() {
+    if (this.stageBusy > 0) return false;
+    if (this.charges < 1) return false;
+    if (!this._spawn(true)) return false;
+    this.charges -= 1;
+    this.audio.drop();
+    return true;
+  }
+
+  // tap on the playfield: a small physical poke on the nearest coins (helps wake / un-wedge them)
+  poke(wx, wy) {
+    let n = 0;
+    for (const idx of this.physics.active) {
+      const s = this.physics.slots[idx];
+      const p = s.body.translation();
+      const dx = p.x - wx, dy = p.y - wy;
+      const d = Math.hypot(dx, dy);
+      if (d > 0.9) continue;
+      const m = 0.02 * (1 - d / 0.9) + 0.004;
+      s.body.applyImpulse({ x: (dx / (d + 0.1)) * m * 3, y: m * 4, z: 0 }, true);
+      s.lowT = 0;
+      n++;
+    }
+    this.audio.tap();
+    this.world.particles.emit(wx, wy, 0.7, n ? 5 : 2, { color: n ? [0xffffff, 0xffe066] : [0xdddddd], speed: 2, life: 0.3, gravity: 5, size: 0.08 });
+    return n;
   }
 
   update(dt) {
     const s = this.state;
     s.stats.playSeconds += dt;
-    // ---- turbo (automation level 5): 8 s burst every 30 s
-    if (s.levels.automation >= 5) {
-      this.turboT = (this.turboT + dt) % 30;
-      const on = this.turboT < 8;
-      if (on && !this.turbo) this.ui.toast('เทอร์โบอัตโนมัติ! ผลิตและเก็บเร็วขึ้น 1.5 เท่า', 2000);
-      this.turbo = on;
-    } else this.turbo = false;
-    const tm = this.turbo ? 1.5 : 1;
 
-    // ---- spawning
-    const cap = E.capacity(s);
-    const batch = this.batchSize();
-    const rate = E.spawnRate(s) * tm;
-    const nozzles = E.nozzleCount(s);
-    if (this.stored + batch <= cap + batch * 0.5 && this.physics.active.length < this.limit && this.physics.freeCount > 0) {
-      this.spawnAcc += rate * dt;
+    // ---- automatic production (Coin/s) + manual charges
+    const maxC = E.maxCharges(s);
+    if (this.charges < maxC) {
+      this.chargeT += dt;
+      if (this.chargeT >= E.CHARGE_TIME) { this.chargeT = 0; this.charges++; }
+    } else this.chargeT = 0;
+    if (this.charges > maxC) this.charges = maxC;
+    if (this.stageBusy > 0) this.stageBusy -= dt;
+    else {
+      const cap = Math.min(E.capacity(s), this.limit);
+      this.spawnAcc += E.spawnRate(s) * dt;
       let guard = 0;
-      while (this.spawnAcc >= batch && guard++ < 6) {
-        if (this.stored + batch > cap + batch * 0.5) break;
-        this.spawnAcc -= batch;
-        const type = E.pickType(s);
-        const x = L.nozzleXs[this.nozzle % nozzles] + (Math.random() - 0.5) * 0.35;
-        this.nozzle++;
-        if (this.physics.spawn(x, L.nozzleY, type, batch) < 0) break;
-        this.stored += batch;
-        s.stats.objectsProduced += batch;
+      while (this.spawnAcc >= 1 && guard++ < 4) {
+        if (this.physics.active.length >= cap) { this.spawnAcc = Math.min(this.spawnAcc, 1); break; }
+        this.spawnAcc -= 1;
+        if (!this._spawn(false)) break;
       }
-    } else {
-      this.spawnAcc = Math.min(this.spawnAcc, batch);
     }
 
     // ---- fixed-step physics
     this.acc = Math.min(this.acc + dt, 0.1);
     while (this.acc >= STEP) {
       this.acc -= STEP;
-      const escaped = this.physics.step(STEP);
-      for (const idx of escaped) {
-        const sl = this.physics.slots[idx];
-        this._credit(sl.type, sl.n, false);
-        this.stored -= sl.n;
-        this.physics.release(idx);
-      }
+      const r = this.physics.step(STEP);
+      for (const idx of r.collected) this._collect(idx, true);
+      for (const idx of r.escaped) { this.escaped++; this._collect(idx, false); }
     }
 
     // ---- anti-jam monitoring
-    if (this.pusher) this.pusher.scan(dt);
+    this.machines.scan(dt);
 
-    // ---- collector: pulls the object nearest to the exit into the vacuum hood
-    this.collectCredit = Math.min(2, this.collectCredit + (E.collectRate(s) * tm / batch) * dt);
-    let guard = 0;
-    while (this.collectCredit >= 1 && guard++ < 6) {
-      const idx = this.physics.nearest(L.exit.x, L.exit.y, true);
-      if (idx < 0) break;
-      this.collectCredit -= 1;
-      this.physics.beginSuck(idx);
-    }
-    // progress of suction animations
+    // ---- grinder animation
     const sucking = this.physics.sucking;
     for (let i = sucking.length - 1; i >= 0; i--) {
       const idx = sucking[i];
       const sl = this.physics.slots[idx];
       sl.st += dt / SUCK_TIME;
-      if (sl.st >= 1) {
-        this._credit(sl.type, sl.n, true);
-        this.stored -= sl.n;
-        this.physics.releaseSucked(idx);
-      }
+      if (sl.st >= 1) this.physics.releaseSucked(idx);
     }
-    if (this.stored < 0.0001) this.stored = Math.max(0, this.stored);
 
-    // ---- floating money text (aggregated)
+    // ---- combo decay
+    if (this.comboT > 0) { this.comboT -= dt; if (this.comboT <= 0) this.combo = 0; }
+
+    // ---- floating cash text (aggregated)
     this.floatT -= dt;
     if (this.floatT <= 0 && this.floatSum > 0) {
-      const p = this.world.project(L.hood.x, L.hood.y + 0.4, 0.3, this.sceneW, this.sceneH);
-      this.ui.floatText(p.x, p.y, '+' + E.fmtMoney(this.floatSum), this.floatSum > E.incomePerSec(s) * 0.5 ? 'big' : '');
+      const pit = this.stageDef.pit;
+      const p = this.world.project((pit.x0 + pit.x1) / 2, 2.0, 0.3, this.sceneW, this.sceneH);
+      this.ui.floatText(p.x, p.y, '+' + E.fmtMoney(this.floatSum), this.floatSum > 20 ? 'big' : '');
       this.floatSum = 0;
-      this.floatT = 0.32;
+      this.floatT = 0.3;
     }
     this._mT += dt;
     if (this._mT >= 1) { this.measured = this._mAcc / this._mT; this._mAcc = 0; this._mT = 0; }
+
+    // ---- stage clear
+    if (E.stageDone(s) && this.stageBusy <= 0) this._clearStage();
   }
 
-  _credit(type, n, fx) {
+  _collect(idx, fx) {
     const s = this.state;
-    const value = E.OBJECT_TYPES[type].value * n * E.valueMultiplier(s);
-    s.money += value;
+    const sl = this.physics.slots[idx];
+    if (sl.state !== 1) return;
+    if (fx) {
+      this.combo++;
+      this.comboT = 2.5;
+      if (this.combo > s.stats.bestCombo) s.stats.bestCombo = this.combo;
+    }
+    const value = E.coinValue(s, sl.type, sl.mult, fx ? this.combo : 0);
+    s.cash += value;
     s.stats.totalEarned += value;
-    s.stats.objectsCollected += n;
+    s.stats.coinsCollected++;
     this._mAcc += value;
     this.floatSum += value;
     if (fx) {
+      E.addProgress(s, 1);
+      if (sl.type === 3) s.gems += 1;
+      this.audio.collect(sl.type);
+      const pit = this.stageDef.pit;
       this.world.pulse = 1;
-      this.audio.collect(type);
-      this.world.particles.emit(L.hood.x, L.hood.y, 0.5, type >= 2 ? 3 : 1, {
-        color: type === 3 ? [0x66f7ff, 0xffffff] : [0xffe066, 0xffffff], speed: 2.2, life: 0.45, gravity: 6, size: 0.1, up: 0.6,
+      this.world.particles.emit(sl.body.translation().x, pit.collectY + 0.3, 0.5, sl.type >= 2 ? 4 : 2, {
+        color: sl.type === 3 ? [0x74f6ff, 0xffffff] : [0xffe066, 0xffffff], speed: 2, life: 0.4, gravity: 6, size: 0.09, up: 0.8,
       });
-    }
+      this.physics.beginSuck(idx);
+    } else this.physics.release(idx);
   }
 
-  // tap/click on the playfield: instantly vacuum nearby objects
-  tap(wx, wy) {
+  _clearStage() {
     const s = this.state;
-    s.stats.taps += 1;
-    let got = 0;
-    for (let i = 0; i < 4; i++) {
-      const idx = this.physics.nearest(wx, wy, false, 1.5);
-      if (idx < 0) break;
-      this.physics.beginSuck(idx);
-      got++;
+    // leftover coins on the board are banked as a bonus (stage change rebuilds the machine)
+    let bonus = 0;
+    for (const idx of [...this.physics.active]) {
+      const sl = this.physics.slots[idx];
+      bonus += E.coinValue(s, sl.type, sl.mult, 0);
+      this.physics.release(idx);
     }
-    this.audio.tap();
-    this.world.particles.emit(wx, wy, 0.9, got ? 6 : 3, { color: got ? [0xffffff, 0xffe066] : [0x9aa3cc], speed: 2.4, life: 0.35, gravity: 4, size: 0.1 });
-    return got;
+    s.cash += bonus;
+    s.stats.totalEarned += bonus;
+    const done = s.stage;
+    const reward = E.completeStage(s);
+    this.stageBusy = 2.4;
+    this.audio.grade();
+    this.ui.stageBanner(done, reward, bonus);
+    this.loadStage(true);
+    this.world.particles.emit(0, 8, 1, 40, { color: [0xffe066, 0x74f6ff, 0xffffff], speed: 5, life: 1.0, gravity: 4, size: 0.16, up: 0.9 });
   }
 }

@@ -1,81 +1,150 @@
-// Shared geometry for physics + visuals (world units). The playfield is a shallow vertical slot seen from
-// the front: real 3D rigid bodies (coins can tilt, roll and tumble) inside a slot slightly narrower than a
-// coin's diameter, so coins can never lie flat and the composition stays readable as a 2.5D game.
+// Shared geometry for physics + visuals (world units). The playfield is a tall portrait machine seen from the
+// front by an orthographic camera. Everything is real 3D: coins are thin cylinders that lie flat on platforms,
+// tip over, roll and push each other inside a shallow slot (|z| < Z_HALF) closed by invisible glass plates.
 
-export const SLOT_DEPTH = 0.4; // free depth between the invisible front and back glass plates
+export const Z_HALF = 0.45; // half depth of the playable slot
+export const IN_HALF = 3.0; // inner half width (between the two side walls)
+export const WALL_W = 0.7; // visible wall thickness (view half width = IN_HALF + WALL_W)
+export const VIEW_HALF_W = IN_HALF + WALL_W;
+export const VIEW_TOP = 15.2;
+export const SLAB_T = 0.9; // platform thickness
+export const SLAB_Z = 0.62; // platform half depth (visual + collider)
+export const PIT_COLLECT_Y = 1.0; // coins below this height inside the pit are swallowed by the grinder
 
-// Coin / token definitions. radius + thickness drive BOTH the rendered mesh and the Rapier cylinder collider,
-// so they can never drift apart. Edit these numbers to resize coins.
+// Coin definitions. radius + thickness drive BOTH the rendered mesh and the Rapier cylinder collider
+// (cylinder axis = local Y for both), so they can never drift apart. Edit these numbers to resize coins.
 export const COIN_TYPES = [
-  { key: 'silver', radius: 0.27, thickness: 0.11, segments: 28, face: 'ring', edge: 0xb9c3d3, faceColor: 0xdfe7f2, metal: 0.85, rough: 0.34 },
-  { key: 'gold', radius: 0.28, thickness: 0.12, segments: 28, face: 'star', edge: 0xc88a12, faceColor: 0xffc82e, metal: 0.9, rough: 0.3 },
-  { key: 'medal', radius: 0.33, thickness: 0.15, segments: 30, face: 'crown', edge: 0xb85a12, faceColor: 0xff9e1a, metal: 0.88, rough: 0.32 },
-  { key: 'gem', radius: 0.3, thickness: 0.18, segments: 6, face: 'gem', edge: 0x2a9fb0, faceColor: 0x66f7ff, metal: 0.35, rough: 0.2 },
+  { key: 'bronze', radius: 0.26, thickness: 0.1, segments: 26, face: 'ring', edge: 0x9a4a12, faceColor: 0xe0873a, metal: 0.8, rough: 0.36 },
+  { key: 'silver', radius: 0.26, thickness: 0.1, segments: 26, face: 'ring', edge: 0x9aa6bb, faceColor: 0xe8eef8, metal: 0.85, rough: 0.3 },
+  { key: 'gold', radius: 0.28, thickness: 0.11, segments: 28, face: 'star', edge: 0xc88a12, faceColor: 0xffd23a, metal: 0.9, rough: 0.28 },
+  { key: 'rare', radius: 0.28, thickness: 0.13, segments: 8, face: 'gem', edge: 0x1f8fa6, faceColor: 0x74f6ff, metal: 0.4, rough: 0.18 },
 ];
-// hexagonal gem token: the collider radius is the hexagon's mean radius (between inscribed and circumscribed)
-export const GEM_COLLIDER_SCALE = 0.93;
+export const RARE_COLLIDER_SCALE = 0.95; // octagon: collider uses the mean radius
 
-export const L = {
-  innerHalfW: 3.0, // inner half width between walls
-  wallHalfW: 0.28,
-  wallTop: 11.6,
-  nozzleY: 10.25,
-  nozzleXs: [0, -1.65, 1.65], // [main, automation #1, automation #2]
-  binTop: 3.45, // objects below this y are "in the collection bin"
-  exit: { x: 2.45, y: 0.9 }, // where the collector grabs objects
-  hood: { x: 3.2, y: 1.45 }, // vacuum hood (visual endpoint of the suction animation)
-  // thick collider (tunnelling-proof); the visual belt is a thin slab placed on its top surface
-  floor: { y: 0.32, halfLen: 3.2, ang: -0.055, thick: 0.9, visThick: 0.3 },
-  paddle: { x: 0, y: 5.05, halfLen: 1.05, maxAng: 0.55 },
+// piston parts (collider == visual)
+export const HEAD = { hy: 0.3, hz: 0.44, hw: 0.14 };
+
+// background / material palettes, one per stage (cycled)
+export const PALETTES = [
+  { name: 'เทา', edge: 0x050607, mid: 0xd9dce2, tint: 0xffffff, accent: 0xffd23f },
+  { name: 'น้ำเงิน', edge: 0x16358f, mid: 0x6f93e6, tint: 0xeef4ff, accent: 0xffd23f },
+  { name: 'ม่วง', edge: 0x40298f, mid: 0x9a7de0, tint: 0xf4eeff, accent: 0xffd23f },
+  { name: 'ชมพู', edge: 0x80304e, mid: 0xe68fb0, tint: 0xfff0f6, accent: 0xfff06a },
+  { name: 'เขียวน้ำทะเล', edge: 0x0b5560, mid: 0x5cd0c4, tint: 0xeafffb, accent: 0xffe066 },
+  { name: 'ส้ม', edge: 0x7e3510, mid: 0xf0a560, tint: 0xfff3e4, accent: 0xfff06a },
+];
+
+const LETTERS = 'ABCDEF';
+
+// Stage layouts: alternating platforms attached to the left / right wall, each with a wall piston (or belt)
+// pushing coins off its free end onto the next platform; the last platform drops coins into the grinder pit.
+function zigzag(n, tops, o = {}) {
+  const def = {
+    n,
+    blocks: [], // {x0,x1,y0,y1,kind:'slab'|'belt'|'column'}
+    plates: [], // rotated funnel plates {cx,cy,halfLen,ang,thick}
+    pistons: [],
+    belts: [],
+    fans: [],
+    magnets: [],
+    launchers: [],
+    gates: [],
+    labels: [], // {id,x,y}
+    jam: [], // {name,x0,x1,y0,y1,slab?}
+    pipe: { x: -1.9, y: 14.1 },
+    spawn: { x: -1.9, y: 13.7 },
+    pit: { x0: -IN_HALF, x1: -0.4, collectY: PIT_COLLECT_Y },
+    tops,
+  };
+  tops.forEach((top, i) => {
+    const left = i % 2 === 0;
+    const x0 = left ? -IN_HALF : -0.4;
+    const x1 = left ? 0.9 : IN_HALF;
+    const isBelt = (o.belts || []).includes(i);
+    def.blocks.push({ x0, x1, y0: top - SLAB_T, y1: top, kind: isBelt ? 'belt' : 'slab', side: left ? 'L' : 'R', top });
+    const id = isBelt ? 'conv' + (o.belts.indexOf(i) + 1) : 'pusher' + LETTERS[i];
+    const lx = left ? -1.85 : 1.85;
+    def.labels.push({ id, x: lx, y: top - 0.45 });
+    if (isBelt) {
+      def.belts.push({ id, x0, x1, top, dir: left ? 1 : -1, side: left ? 'L' : 'R' });
+    } else {
+      const wall = left ? -IN_HALF : IN_HALF;
+      const dir = left ? 1 : -1;
+      const reach = left ? x1 + 0.2 : x0 - 0.2;
+      def.pistons.push({ id, side: left ? 'L' : 'R', dir, wall, top, y: top + HEAD.hy + 0.01, maxExt: Math.abs(reach - wall) });
+    }
+    // the free end of every platform is a lip where coins can teeter: watched by the anti-jam system
+    def.jam.push({ name: 'lip' + i, x0: left ? 0.15 : -1.05, x1: left ? 1.05 : -0.15, y0: top - 0.05, y1: top + 0.7, slab: i });
+  });
+  const last = tops[tops.length - 1];
+  def.blocks.push({ x0: -0.4, x1: 0.3, y0: 0, y1: last - SLAB_T, kind: 'column' });
+  if (o.hopper) {
+    // funnel into the grinder: slot between the plate end and the column is only 0.7 wide
+    const x0 = -IN_HALF, y0 = 3.0, x1 = -1.1, y1 = 1.85;
+    const dx = x1 - x0, dy = y1 - y0;
+    def.plates.push({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 - 0.2, halfLen: Math.hypot(dx, dy) / 2, ang: Math.atan2(dy, dx), thick: 0.4 });
+    def.jam.push({ name: 'hopper', x0: -1.9, x1: -0.4, y0: PIT_COLLECT_Y + 0.15, y1: 3.4 });
+  }
+  if (o.fan !== undefined) {
+    const top = tops[o.fan];
+    def.fans.push({ id: 'fan1', side: 'L', x: -IN_HALF, y: top + 1.15, dir: 1, x1: 1.6, y0: top, y1: top + 1.7 });
+    def.labels.push({ id: 'fan1', x: 0.0, y: top - 0.45 });
+  }
+  if (o.magnet) {
+    def.magnets.push({ id: 'magnet1', x: -0.45, y: 3.3, tx: -0.75, ty: 1.4, r: 2.1 });
+    def.labels.push({ id: 'magnet1', x: -1.55, y: 4.3 });
+  }
+  if (o.launcher !== undefined) {
+    const i = o.launcher;
+    const top = tops[i];
+    const left = i % 2 === 0;
+    def.launchers.push({ id: 'launch1', dir: left ? 1 : -1, x: left ? 0.62 : -0.12, top, x0: left ? 0.3 : -0.4, x1: left ? 0.9 : 0.0 });
+    def.labels.push({ id: 'launch1', x: left ? 1.9 : -1.9, y: top - 0.45 + (left ? 0.0 : 0.0) + 0.0 });
+    // move the pusher label of that platform out of the way
+    const pl = def.labels.find((l) => l.id === 'pusher' + LETTERS[i]);
+    if (pl) pl.y -= 0.0;
+    const ll = def.labels.find((l) => l.id === 'launch1');
+    ll.y = top - 0.45;
+    ll.x = left ? 0.55 : -0.2;
+  }
+  if (o.gate !== undefined) {
+    const next = tops[o.gate];
+    def.gates.push({ id: 'gate1', x0: 0.55, x1: 1.75, y0: next + 1.0, y1: next + 1.75 });
+  }
+  return def;
+}
+
+const STAGES = {
+  1: () => zigzag(1, [10.6, 6.0]),
+  2: () => zigzag(2, [11.9, 9.4, 6.9, 4.4], { hopper: true }),
+  3: () => zigzag(3, [12.0, 9.5, 7.0, 4.5], { hopper: true, belts: [2], fan: 0, magnet: true }),
+  4: () => zigzag(4, [12.0, 9.5, 7.0, 4.5], { hopper: true, belts: [1], launcher: 2, magnet: true }),
+  5: () => zigzag(5, [12.2, 9.8, 7.4, 5.0], { hopper: true, belts: [1], fan: 0, launcher: 2, magnet: true, gate: 3 }),
 };
 
-// staggered peg rows
-export const PEGS = [];
-[
-  { y: 9.0, xs: [-1.2, 0, 1.2] }, // no peg next to the walls: a gap narrower than a coin would trap it
-  { y: 8.2, xs: [-1.8, -0.6, 0.6, 1.8] },
-  { y: 7.4, xs: [-1.2, 0, 1.2] },
-  { y: 6.6, xs: [-1.8, -0.6, 0.6, 1.8] },
-].forEach((r) => r.xs.forEach((x) => PEGS.push({ x, y: r.y })));
-export const PEG_R = 0.16;
+// stage n >= 6 reuses layouts 3..5 with new colours and bigger targets
+export function layoutIndex(n) {
+  return n <= 5 ? n : 3 + ((n - 3) % 3);
+}
 
-// slanted funnel plates above the bin: from the wall inwards and down
-export const DEFLECTORS = [
-  { x: -2.25, y: 4.0, halfLen: 0.95, ang: -0.42, thick: 0.3 },
-  { x: 2.25, y: 4.0, halfLen: 0.95, ang: 0.42, thick: 0.3 },
-];
-export const DEFLECTOR_VIS_THICK = 0.16;
+const cache = new Map();
+export function getStage(n) {
+  const li = layoutIndex(n);
+  const key = li;
+  if (!cache.has(key)) cache.set(key, STAGES[li]());
+  const base = cache.get(key);
+  return { ...base, n, palette: PALETTES[(n - 1) % PALETTES.length] };
+}
 
-// ---------------- anti-jam pusher ----------------
-// Jam zones: the production passages. A coin that is nearly motionless in one of these is blocked, because
-// coins here should always be falling. The final collection bin (y < binTop) is NOT a jam zone: coins rest there.
-export const JAM_ZONES = [
-  { name: 'peg field', x0: -3.0, x1: 3.0, y0: 5.75, y1: 9.7 },
-  { name: 'funnel', x0: -3.0, x1: 3.0, y0: 3.55, y1: 5.75 },
-];
-
-// Piston corridors sit exactly between the peg rows so the plate slides between pegs.
-// dir: +1 = pushes to the right (mounted on the left wall), -1 = pushes to the left.
-export const PISTONS = [
-  { id: 'A', y: 8.6, dir: 1, maxStroke: 3.0 },
-  { id: 'B', y: 7.8, dir: -1, maxStroke: 3.0 },
-  { id: 'C', y: 7.0, dir: 1, maxStroke: 3.0 },
-  { id: 'D', y: 6.1, dir: -1, maxStroke: 3.0 },
-];
-// plate half-height + coin radius (~0.43) is just over half the corridor spacing (0.4), so every coin in
-// the peg field touches at least one plate when it sweeps through
-// the piston is a solid rod from the wall to the pushing head: nothing can drop in behind the head and be
-// squeezed against the wall when it retracts. rodHalf is the collider half-length (mostly hidden inside the wall).
-export const PISTON_PLATE = { halfX: 0.15, halfY: 0.15, wallX: 3.0, restFront: 3.01, rodHalf: 1.65 };
+// every machine id that can ever appear (ids are global: levels persist across stages)
+export const MACHINE_IDS = ['pusherA', 'pusherB', 'pusherC', 'pusherD', 'conv1', 'fan1', 'magnet1', 'launch1'];
 
 export const JAM = {
-  speed: 0.1, // m/s (linear) below which a coin counts as motionless
-  spin: 0.5, // rad/s angular speed below which a coin counts as motionless
-  time: 1.4, // seconds of continuous stillness inside a jam zone before a coin is "stuck"
-  grace: 3.0, // seconds a nudged coin is left alone
-  pistonCooldown: 3.5, // per-piston rest after a cycle
-  globalCooldown: 1.2, // minimum gap between automatic activations
-  manualCooldown: 7.0, // seconds before the "ช่วยดันเหรียญ" button can be used again
-  reach: 0.55, // a plate physically touches coins within this vertical distance of its corridor
-  fallbackReach: 2.4, // coins farther away (funnel) get a gentle nudge impulse from the nearest piston
+  speed: 0.12, // m/s linear below which a coin counts as motionless
+  spin: 0.6, // rad/s angular
+  time: 1.5, // seconds of continuous stillness inside a jam zone before a coin is "stuck"
+  grace: 3.5, // seconds a helped coin is left alone
+  pistonCooldown: 3.0,
+  globalCooldown: 1.2,
+  manualCooldown: 8.0, // "ช่วยดัน" button
 };

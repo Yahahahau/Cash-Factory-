@@ -2,18 +2,18 @@ import './style.css';
 import * as E from './economy.js';
 import * as Save from './save.js';
 import { Physics, loadRapier } from './physics.js';
+import { Machines } from './machines.js';
 import { World } from './world.js';
 import { PixelPipeline } from './pixel.js';
 import { GameAudio } from './audio.js';
 import { UI } from './ui.js';
 import { Game } from './game.js';
-import { Pusher } from './pusher.js';
 import { Embed, BUILD_ID, inIframe } from './embed.js';
 
 const QUALITY = {
-  low: { limit: 55, rows: 220, dpr: 1.5, rate: 7 },
-  medium: { limit: 85, rows: 270, dpr: 2, rate: 9 },
-  high: { limit: 125, rows: 320, dpr: 2, rate: 11 },
+  low: { limit: 50, rows: 230, dpr: 1.5, shadows: false, shadowMap: 512 },
+  medium: { limit: 80, rows: 280, dpr: 2, shadows: true, shadowMap: 512 },
+  high: { limit: 120, rows: 330, dpr: 2, shadows: true, shadowMap: 1024 },
 };
 const MAX_BODIES = 130;
 
@@ -41,7 +41,7 @@ async function boot() {
     throw e;
   }
   const physics = new Physics(MAX_BODIES);
-  const pusher = new Pusher(physics);
+  const machines = new Machines(physics, () => state);
   const pipeline = new PixelPipeline(world.renderer, world.scene, world.camera);
   const audio = new GameAudio();
   audio.setVolumes(state.settings.sfx, state.settings.music);
@@ -50,58 +50,55 @@ async function boot() {
   let embed;
   let saveTimer = 0;
   let suspendedAt = null;
-
   const doSave = () => Save.save(state);
 
   const ui = new UI({
     version: BUILD_ID,
     inIframe,
     onClick: () => { audio.unlock(); audio.tap(); },
-    onBuy: (key, mode) => {
+    onBuy: (key) => {
       audio.unlock();
-      const plan = ui.plan(key);
-      let bought = 0;
-      for (let i = 0; i < plan.n; i++) if (E.buyUpgrade(state, key)) bought++; else break;
-      if (!bought) { audio.deny(); ui.toast(plan.info.locked || (plan.info.atMax ? 'ถึงระดับสูงสุดแล้ว' : 'เงินไม่พอ'), 1200); return false; }
+      const info = E.upgradeInfo(state, key);
+      if (info.atMax) { ui.toast('ถึงระดับสูงสุดแล้ว', 1200); return false; }
+      if (!E.buyUpgrade(state, key)) { audio.deny(); ui.toast('เงินไม่พอ', 1100); return false; }
       audio.buy();
-      world.particles.emit(0, 9.5, 1.2, 14, { color: [0xffe066, 0x66f7ff, 0xffffff], speed: 3.5, life: 0.7, gravity: 5, size: 0.14, up: 0.9 });
-      if (key === 'automation') {
-        world.setNozzles(E.nozzleCount(state));
-        ui.toast('ปลดล็อก: ' + E.AUTOMATION_FEATURES[state.levels.automation], 2600);
-        if (!state.unlocked.includes('auto' + state.levels.automation)) state.unlocked.push('auto' + state.levels.automation);
-      }
+      world.particles.emit(0, 8, 1, 14, { color: [0xffe066, 0x66f7ff, 0xffffff], speed: 3.5, life: 0.7, gravity: 5, size: 0.14, up: 0.9 });
+      if (info.isMachine && info.lvl === 0) ui.toast(E.MACHINES[key].name + ' เปิดใช้งานแล้ว!', 1800);
+      if (key === 'capacity') game.charges = Math.min(E.maxCharges(state), game.charges);
       doSave();
       return true;
     },
-    onGrade: () => {
+    onDrop: () => {
       audio.unlock();
-      if (!E.upgradeGrade(state)) { audio.deny(); return; }
-      world.setGrade(state.grade, true);
-      ui.banner(state.grade);
-      audio.grade();
-      ui.toast('เลื่อนเป็น ' + E.gradeOf(state).name + '!', 2800);
-      ui.renderTab(true);
-      doSave();
+      const ok = game.drop();
+      if (!ok) audio.deny();
+      return ok;
+    },
+    onShake: () => {
+      audio.unlock();
+      const r = machines.manual();
+      if (r.ok) {
+        ui.toast('ลูกสูบดันเหรียญพร้อมเขย่ากระดาน!', 1400);
+      } else {
+        audio.deny();
+        ui.toast('ยังไม่พร้อม รออีก ' + Math.ceil(r.wait) + ' วินาที', 1200);
+      }
     },
     onSetting: (k, v) => {
       state.settings[k] = v;
       if (k === 'pixel') applySize();
-      else if (k === 'quality') { game.setQuality(QUALITY[v]); applySize(); }
+      else if (k === 'quality') { game.setQuality(QUALITY[v]); world.setQuality(QUALITY[v]); applySize(); }
       else audio.setVolumes(state.settings.sfx, state.settings.music);
       clearTimeout(saveTimer);
       saveTimer = setTimeout(doSave, 400);
     },
     onReset: () => {
       Save.wipe();
-      const fresh2 = Save.load().state;
-      fresh2.settings = { ...state.settings };
-      state = fresh2;
+      const keep = state.settings;
+      state = Save.load().state;
+      state.settings = { ...keep };
       game.reset(state);
-      world.setGrade(1, false);
-      world.setNozzles(1, false);
       ui.state = state;
-      ui.renderTab(true);
-      ui.updateCards(true);
       doSave();
       ui.toast('รีเซ็ตความคืบหน้าแล้ว');
     },
@@ -109,37 +106,23 @@ async function boot() {
     onModal: () => {},
   });
   ui.state = state;
+  ui.world = world;
 
-  game = new Game({ pusher, state, physics, world, audio, ui });
-  game.setQuality(QUALITY[state.settings.quality]);
-  world.setGrade(state.grade, false);
-  world.setNozzles(E.nozzleCount(state), false);
-
-  // ---------- anti-jam pusher ----------
-  pusher.onFire = (kind) => {
-    if (kind === 'manual') state.stats.manualPushes++; else state.stats.autoPushes++;
+  // ---------- machine feedback ----------
+  machines.onFire = (kind) => {
+    if (kind === 'manual') state.stats.manualPushes++;
+    else if (kind === 'auto') state.stats.autoPushes++;
     audio.clunk();
   };
-  const assistBtn = document.getElementById('assist');
-  const assistCd = assistBtn.querySelector('.as-cd');
-  let assistWasCd = false;
-  assistBtn.addEventListener('click', () => {
-    audio.unlock();
-    const r = pusher.manual();
-    if (r.ok) {
-      assistBtn.classList.add('pressed');
-      setTimeout(() => assistBtn.classList.remove('pressed'), 160);
-      ui.toast('ลูกสูบดันเหรียญแล้ว!', 1400);
-    } else {
-      audio.deny();
-      ui.toast('ลูกสูบกำลังพัก รออีก ' + Math.ceil(r.wait) + ' วินาที', 1300);
-    }
-  });
-  function updateAssist() {
-    const cd = pusher.manualCd > 0;
-    if (cd !== assistWasCd) { assistBtn.classList.toggle('cd', cd); assistWasCd = cd; }
-    assistCd.style.transform = 'scaleX(' + (cd ? pusher.manualProgress : 0).toFixed(3) + ')';
-  }
+  machines.onPuff = (x, y) => world.particles.emit(x, y, 0.6, 8, { color: [0xffffff, 0xbfe9ff], speed: 2.2, life: 0.35, gravity: -1, size: 0.1, up: 0.2 });
+  machines.onGate = (x, y) => { world.particles.emit(x, y, 0.6, 8, { color: [0x7dffb0, 0xffffff], speed: 2.2, life: 0.5, gravity: 2, size: 0.1, up: 0.6 }); audio.buy(); };
+  machines.onLaunch = (x, y) => { world.particles.emit(x, y, 0.6, 6, { color: [0xff9e1a, 0xfff2b0], speed: 2.5, life: 0.4, gravity: 4, size: 0.1, up: 0.8 }); audio.clunk(); };
+  machines.onShake = () => { world.shake = 1; audio.clunk(); };
+
+  game = new Game({ state, physics, machines, world, audio, ui });
+  game.setQuality(QUALITY[state.settings.quality]);
+  world.setQuality(QUALITY[state.settings.quality]);
+  game.loadStage(false);
 
   // ---------- sizing ----------
   let cssW = 1, cssH = 1;
@@ -156,56 +139,48 @@ async function boot() {
       const rt = pipeline.resize(Math.floor(cssW * dpr), Math.floor(cssH * dpr), q.rows);
       aspect = rt.w / rt.h;
     }
-    const hudEl = document.getElementById('hud');
-    const hudFrac = hudEl ? (hudEl.offsetHeight + 4) / cssH : 0;
-    world.fit(cssW, cssH, aspect, hudFrac);
+    world.fit(cssW, cssH, aspect);
     game.sceneW = cssW;
     game.sceneH = cssH;
     embed && embed.reportSize(window.innerWidth, window.innerHeight);
   }
   const ro = new ResizeObserver(() => applySize());
   ro.observe(sceneEl);
-  ro.observe(document.getElementById('hud'));
   window.addEventListener('orientationchange', () => setTimeout(applySize, 200));
 
-  // ---------- input (tap to vacuum) ----------
-  canvas.addEventListener('pointerdown', (e) => {
-    audio.unlock();
-    const r = canvas.getBoundingClientRect();
-    const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
-    const ny = -(((e.clientY - r.top) / r.height) * 2 - 1);
-    let wx, wy;
-    if (state.settings.pixel) {
-      // visible region is the bottom-left part of the low-res target; map through the same crop
-      const p = world.unprojectToPlane(-1 + (nx + 1) * cropX(), -1 + (ny + 1) * cropY());
-      wx = p.x; wy = p.y;
-    } else {
-      const p = world.unprojectToPlane(nx, ny);
-      wx = p.x; wy = p.y;
-    }
-    game.tap(wx, wy);
-  });
+  // ---------- input: tap the playfield to poke coins (real impulse) ----------
   function cropX() {
     const q = QUALITY[state.settings.quality];
     const dpr = Math.min(window.devicePixelRatio || 1, q.dpr);
-    return (Math.floor(cssW * dpr)) / (pipeline.rt ? pipeline.rt.width * pipeline.block : 1);
+    return Math.floor(cssW * dpr) / (pipeline.rt ? pipeline.rt.width * pipeline.block : 1);
   }
   function cropY() {
     const q = QUALITY[state.settings.quality];
     const dpr = Math.min(window.devicePixelRatio || 1, q.dpr);
-    return (Math.floor(cssH * dpr)) / (pipeline.rt ? pipeline.rt.height * pipeline.block : 1);
+    return Math.floor(cssH * dpr) / (pipeline.rt ? pipeline.rt.height * pipeline.block : 1);
   }
+  canvas.addEventListener('pointerdown', (e) => {
+    audio.unlock();
+    if (ui.sheetKey) { ui.closeSheet(); return; }
+    const r = canvas.getBoundingClientRect();
+    const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
+    const ny = -(((e.clientY - r.top) / r.height) * 2 - 1);
+    const p = state.settings.pixel
+      ? world.unprojectToPlane(-1 + (nx + 1) * cropX(), -1 + (ny + 1) * cropY())
+      : world.unprojectToPlane(nx, ny);
+    game.poke(p.x, p.y);
+  });
   window.addEventListener('pointerdown', () => audio.unlock(), { once: true });
 
   // ---------- offline earnings ----------
-  function applyOffline(initial) {
+  function applyOffline() {
     const info = E.computeOffline(state);
     if (!info) return;
-    state.money += info.gain;
+    state.cash += info.gain;
     state.stats.totalEarned += info.gain;
     state.stats.offlineEarned += info.gain;
-    state.stats.objectsProduced += info.objects;
-    state.stats.objectsCollected += info.objects;
+    state.stats.coinsCollected += info.coins;
+    state.progress = Math.min(E.stageTarget(state.stage) - 1, state.progress + info.coins);
     info.cap = E.offlineCapSeconds(state);
     doSave();
     ui.showOffline(info);
@@ -213,7 +188,7 @@ async function boot() {
     return info;
   }
 
-  // ---------- suspend / resume (tab hidden, host pause) ----------
+  // ---------- suspend / resume ----------
   function suspend() {
     if (suspendedAt) return;
     doSave();
@@ -225,7 +200,7 @@ async function boot() {
     suspendedAt = null;
     audio.setPaused(false);
     last = performance.now();
-    applyOffline(false);
+    applyOffline();
   }
   document.addEventListener('visibilitychange', () => (document.hidden ? suspend() : resume()));
   window.addEventListener('pagehide', doSave);
@@ -254,11 +229,11 @@ async function boot() {
     const dt = Math.min(0.05, raw);
     game.update(dt);
     world.syncObjects(physics);
-    world.update(dt, physics, state, pusher);
-    updateAssist();
+    world.update(dt, machines);
     ui.update(state, game);
+    ui.setAssistProgress(machines.manualCd > 0 ? machines.manualProgress : 1);
     slowT += dt;
-    if (slowT >= 0.25) { slowT = 0; ui.slowUpdate(state); }
+    if (slowT >= 0.25) { slowT = 0; ui.slowUpdate(state, machines); }
     autoSave += dt;
     if (autoSave >= 5) { autoSave = 0; doSave(); }
     if (state.settings.pixel) pipeline.render();
@@ -276,16 +251,16 @@ async function boot() {
   }
 
   applySize();
-  if (!fresh) applyOffline(true);
+  if (!fresh) applyOffline();
   doSave();
-  world.refreshTextures();
-  document.fonts && document.fonts.ready.then(() => world.refreshTextures());
+  ui.slowUpdate(state, machines);
+  document.fonts && document.fonts.ready.then(() => {});
   requestAnimationFrame(frame);
   ui.hideLoading();
   embed.start({ w: window.innerWidth, h: window.innerHeight });
 
   // handy for debugging / automated tests
-  window.__pcf = { pusher, get state() { return state; }, game, world, physics, E, Save, ui, pipeline, audio };
+  window.__pcf = { get state() { return state; }, game, world, physics, machines, E, Save, ui, pipeline, audio };
 }
 
 boot().catch((e) => {

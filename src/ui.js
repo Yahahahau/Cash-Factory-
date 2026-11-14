@@ -1,36 +1,32 @@
 import * as E from './economy.js';
-import { iconURL } from './icons.js';
 
-const $ = (s, r = document) => r.querySelector(s);
 const QUALITY_TH = { low: 'ต่ำ', medium: 'กลาง', high: 'สูง' };
+const ICON = { pusher: 'ลูกสูบ', conveyor: 'สายพาน', blower: 'พัดลม', magnet: 'แม่เหล็ก', launcher: 'เครื่องดีด', rate: 'เหรียญ/วิ', capacity: 'ความจุ', rare: 'หายาก' };
 
 export class UI {
   constructor(h) {
-    this.h = h; // handlers
+    this.h = h;
     this.state = null;
-    this.buyMode = '1';
+    this.world = null;
     this.cache = {};
-    this.tabNow = 'up';
     this.floatPool = [];
     this.floatIdx = 0;
-    this.accum = 0;
+    this.labels = []; // {id, el, x, y}
+    this.sheetKey = null;
     this._grab();
-    this._tabs();
-    this._mode();
-    this._cards();
+    this._bind();
     this._floats();
-    this.el.gear.addEventListener('click', () => { this.h.onClick(); this.openSettings(); });
   }
 
   _grab() {
     const g = (id) => document.getElementById(id);
     this.el = {
-      money: g('money'), income: g('income'), gradeBadge: g('gradeBadge'), gradeName: g('gradeName'),
-      chipSpawn: g('chipSpawn'), chipCollect: g('chipCollect'), chipStore: g('chipStore'),
-      storeBar: g('storeBar'), storeFill: g('storeFill'), flash: g('flash'), banner: g('banner'),
-      bannerTitle: g('bannerTitle'), bannerSub: g('bannerSub'), toast: g('toast'), cards: g('cards'),
-      factory: g('tab-factory'), stats: g('tab-stats'), modal: g('modal'), gear: g('gear'), floats: g('floats'),
-      loading: g('loading'),
+      stageTitle: g('stageTitle'), pFill: g('pFill'), pText: g('pText'), cash: g('cash'), gems: g('gems'), combo: g('combo'),
+      labels: g('labels'), floats: g('floats'), sheet: g('sheet'), modal: g('modal'), toast: g('toast'), flash: g('flash'),
+      banner: g('banner'), bannerSmall: g('bannerSmall'), bannerTitle: g('bannerTitle'), bannerSub: g('bannerSub'), loading: g('loading'),
+      drop: g('dropBtn'), dropFill: g('dropFill'), charges: g('charges'), assist: g('assist'),
+      rateBtn: g('rateBtn'), ratePrice: g('ratePrice'), rateLv: g('rateLv'), rateInfo: g('rateInfo'),
+      padCap: g('padCap'), padRare: g('padRare'), menu: g('menuBtn'),
     };
   }
 
@@ -41,194 +37,164 @@ export class UI {
     }
   }
 
-  // ---------- tabs ----------
-  _tabs() {
-    document.querySelectorAll('.tab').forEach((b) => {
-      b.addEventListener('click', () => {
-        this.h.onClick();
-        this.tabNow = b.dataset.tab;
-        document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === b));
-        document.querySelectorAll('.tabbody').forEach((x) => x.classList.toggle('on', x.id === 'tab-' + this.tabNow));
-        this.renderTab(true);
-      });
+  _bind() {
+    const bindBtn = (el, fn) => {
+      // pointerdown feels instant on touch; click is the fallback for keyboards / synthetic events
+      el.addEventListener('click', (e) => { e.stopPropagation(); fn(e); });
+    };
+    bindBtn(this.el.menu, () => { this.h.onClick(); this.openMenu(); });
+    bindBtn(this.el.drop, () => {
+      const ok = this.h.onDrop();
+      const b = this.el.drop;
+      if (ok) { b.classList.remove('press'); void b.offsetWidth; b.classList.add('press'); }
     });
-  }
-
-  _mode() {
-    document.querySelectorAll('.mode .m').forEach((b) => {
-      b.addEventListener('click', () => {
-        this.h.onClick();
-        this.buyMode = b.dataset.m;
-        document.querySelectorAll('.mode .m').forEach((x) => x.classList.toggle('on', x === b));
-        this.updateCards(true);
-      });
+    bindBtn(this.el.assist, () => this.h.onShake());
+    bindBtn(this.el.rateBtn, () => {
+      const ok = this.h.onBuy('rate');
+      if (ok) this._pop(this.el.rateBtn);
     });
+    for (const p of [this.el.padCap, this.el.padRare]) bindBtn(p, () => { this.h.onClick(); this.openSheet(p.dataset.key); });
   }
 
-  // ---------- upgrade cards ----------
-  _cards() {
-    this.cardEls = {};
-    for (const key of E.UPGRADE_KEYS) {
-      const def = E.UPGRADES[key];
-      const card = document.createElement('div');
-      card.className = 'card';
-      card.innerHTML = `<div class="ico"></div><div class="info"><div class="nm"><span>${def.name}</span><span class="lv"></span></div><div class="bar"><i></i></div><div class="fx"></div></div><button class="buy"><small></small><b></b></button>`;
-      card.querySelector('.ico').style.backgroundImage = `url(${iconURL(def.icon)})`;
-      const btn = card.querySelector('.buy');
-      btn.addEventListener('click', () => {
-        const res = this.h.onBuy(key, this.buyMode);
-        if (res) { btn.classList.remove('pop'); void btn.offsetWidth; btn.classList.add('pop'); card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop'); }
-        this.updateCards(true);
-      });
-      this.el.cards.appendChild(card);
-      this.cardEls[key] = {
-        card, btn, lv: card.querySelector('.lv'), bar: card.querySelector('.bar i'), fx: card.querySelector('.fx'),
-        small: btn.querySelector('small'), cost: btn.querySelector('b'),
-      };
-    }
+  _pop(el) {
+    el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
   }
 
-  plan(key) {
-    const s = this.state;
-    const info = E.upgradeInfo(s, key);
-    if (info.atMax || info.locked) return { info, n: 0, cost: info.cost };
-    const want = this.buyMode === 'max' ? 9999 : Number(this.buyMode);
-    let n = 0;
-    let cost = 0;
-    let lvl = info.lvl;
-    const max = info.max;
-    const limit = key === 'automation' ? Math.min(max, s.grade) : max;
-    while (n < want && lvl < limit) {
-      const c = E.upgradeCost(key, lvl);
-      if (this.buyMode === 'max' && cost + c > s.money) break;
-      cost += c; lvl++; n++;
+  // ---------- platform price labels (attached to world positions) ----------
+  setStage(def) {
+    this.closeSheet();
+    this.el.labels.innerHTML = '';
+    this.labels = [];
+    for (const l of def.labels) {
+      const el = document.createElement('button');
+      el.className = 'plabel';
+      el.dataset.id = l.id;
+      el.innerHTML = '<span class="cur">$</span><b></b><em></em>';
+      el.addEventListener('click', (e) => { e.stopPropagation(); this.h.onClick(); this.openSheet(l.id); });
+      this.el.labels.appendChild(el);
+      this.labels.push({ id: l.id, el, x: l.x, y: l.y, b: el.querySelector('b'), em: el.querySelector('em') });
     }
-    if (n === 0) { // MAX but can't afford even one
-      n = 1;
-      cost = info.cost;
-    }
-    return { info, n, cost };
+    this.cache.stageTitle = null;
+    this.updateLabels();
   }
 
-  updateCards(force) {
-    const s = this.state;
-    for (const key of E.UPGRADE_KEYS) {
-      const c = this.cardEls[key];
-      const p = this.plan(key);
-      const info = p.info;
-      this.setText('lv' + key, c.lv, `Lv.${info.lvl}/${info.max}`);
-      const pct = (info.lvl / info.max) * 100;
-      if (this.cache['bar' + key] !== pct) { this.cache['bar' + key] = pct; c.bar.style.width = pct + '%'; }
-      this.setText('fx' + key, c.fx, info.atMax ? 'ถึงระดับสูงสุดของเกรดนี้แล้ว' : E.effectText(s, key));
-      let cls = 'buy';
-      let small = '';
-      let cost = '';
-      if (info.atMax) {
-        cls += ' max';
-        small = key === 'automation' ? 'สูงสุด' : (s.grade < E.GRADES.length ? 'เลื่อนเกรด' : 'สูงสุด');
-        cost = 'MAX';
-      } else if (info.locked) {
-        cls += ' lock';
-        small = info.locked;
-        cost = '';
-      } else {
-        const can = s.money >= p.cost;
-        if (!can) cls += ' off';
-        small = p.n > 1 ? `ซื้อ ×${p.n}` : 'ซื้อ';
-        cost = E.fmtMoney(p.cost);
-      }
-      const keyS = cls + small + cost;
-      if (this.cache['btn' + key] !== keyS || force) {
-        this.cache['btn' + key] = keyS;
-        c.btn.className = cls + (c.btn.classList.contains('pop') ? ' pop' : '');
-        c.small.textContent = small;
-        c.cost.textContent = cost;
-      }
-    }
-  }
-
-  // ---------- factory + stats tabs ----------
-  renderTab(force) {
+  updateLabels() {
     const s = this.state;
     if (!s) return;
-    if (this.tabNow === 'factory') {
-      const g = E.gradeOf(s);
-      const gr = E.gradeRequirements(s);
-      const sig = [s.grade, Math.floor(s.money), s.levels.production, s.levels.value, s.levels.storage, s.levels.efficiency].join('|');
-      if (!force && this.cache.fsig === sig) return;
-      this.cache.fsig = sig;
-      let h = `<div class="sec-title">${g.name} (เกรด ${g.id})</div>`;
-      h += '<div class="gtrack">' + E.GRADES.map((x) => `<i class="${x.id < s.grade ? 'on' : x.id === s.grade ? 'cur' : ''}">${x.id}</i>`).join('') + '</div>';
-      h += `<div class="kv"><span>ตัวคูณมูลค่า</span><b>×${E.fmtNum(g.valueMult)}</b></div>`;
-      h += `<div class="kv"><span>ความเร็วผลิต</span><b>×${g.spawnMult}</b></div>`;
-      h += `<div class="kv"><span>ความเร็วเก็บ</span><b>×${g.collectMult}</b></div>`;
-      h += `<div class="kv"><span>ความจุเพิ่ม</span><b>+${g.capBonus}</b></div>`;
-      h += `<div class="kv"><span>เลเวลสูงสุดต่อด้าน</span><b>${g.levelCap}</b></div>`;
-      h += `<div class="note">เอฟเฟกต์: ${g.fx}</div>`;
-      if (gr) {
-        h += `<div class="sec-title" style="margin-top:12px">เงื่อนไขเลื่อนเป็น ${gr.next.name}</div>`;
-        for (const r of gr.reqs) {
-          const val = r.money ? `${E.fmtMoney(Math.min(r.have, r.need))}/${E.fmtMoney(r.need)}` : `${r.have}/${r.need}`;
-          h += `<div class="req ${r.ok ? 'ok' : 'no'}"><span>${r.ok ? '✔' : '✖'} ${r.label}</span><b>${val}</b></div>`;
-        }
-        h += `<div class="note">ปลดล็อก: ${gr.next.fx} · มูลค่า ×${E.fmtNum(gr.next.valueMult)} · เลเวลสูงสุด ${gr.next.levelCap}</div>`;
-        h += `<button class="big-btn ${gr.ok ? '' : 'off'}" id="gradeBtn">${gr.ok ? 'อัปเกรดโรงงาน!' : 'ยังไม่ครบเงื่อนไข'}</button>`;
-      } else {
-        h += '<div class="sec-title" style="margin-top:12px">คุณมีโรงงานระดับสูงสุดแล้ว!</div><div class="note">อัปเกรดทุกด้านให้ถึงเลเวลสูงสุดเพื่อรายได้มหาศาล</div>';
-      }
-      this.el.factory.innerHTML = h;
-      const b = document.getElementById('gradeBtn');
-      if (b) b.addEventListener('click', () => this.h.onGrade());
-    } else if (this.tabNow === 'stats') {
-      const st = s.stats;
-      const sig = [Math.floor(st.playSeconds), Math.floor(st.totalEarned), st.objectsCollected | 0, st.taps, st.autoPushes | 0, st.manualPushes | 0].join('|');
-      if (!force && this.cache.ssig === sig) return;
-      this.cache.ssig = sig;
-      const rows = [
-        ['รายได้ทั้งหมด', E.fmtMoney(st.totalEarned)],
-        ['วัตถุที่ผลิตแล้ว', E.fmtNum(Math.floor(st.objectsProduced))],
-        ['วัตถุที่เก็บแล้ว', E.fmtNum(Math.floor(st.objectsCollected))],
-        ['อัปเกรดที่ซื้อ', String(st.upgradesBought)],
-        ['จำนวนครั้งที่แตะเก็บ', String(st.taps)],
-        ['ดันเหรียญอัตโนมัติ', String(st.autoPushes | 0)],
-        ['ดันเหรียญด้วยมือ', String(st.manualPushes | 0)],
-        ['รายได้ออฟไลน์รวม', E.fmtMoney(st.offlineEarned)],
-        ['เวลาที่เล่น', E.fmtDuration(st.playSeconds)],
-        ['รายได้ต่อวินาที', E.fmtMoney(E.incomePerSec(s))],
-        ['เวอร์ชัน', this.h.version],
-      ];
-      this.el.stats.innerHTML = rows.map((r) => `<div class="kv"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
+    for (const l of this.labels) {
+      const info = E.upgradeInfo(s, l.id);
+      const txt = info.atMax ? 'MAX' : E.fmtCash(info.cost);
+      if (l.b.textContent !== txt) l.b.textContent = txt;
+      const lv = info.lvl > 0 ? 'Lv.' + info.lvl : '';
+      if (l.em.textContent !== lv) l.em.textContent = lv;
+      const cls = 'plabel' + (info.atMax ? ' max' : info.canBuy ? ' ready' : '') + (info.lvl === 0 ? ' fresh' : '');
+      if (l.el.className !== cls) l.el.className = cls;
     }
+  }
+
+  placeLabels(w, h) {
+    if (!this.world) return;
+    for (const l of this.labels) {
+      const p = this.world.project(l.x, l.y, 0.7, w, h);
+      l.el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -50%)`;
+    }
+  }
+
+  // ---------- contextual upgrade panel ----------
+  openSheet(key) {
+    this.sheetKey = key;
+    this.renderSheet(true);
+    this.el.sheet.classList.remove('hidden');
+  }
+
+  closeSheet() {
+    this.sheetKey = null;
+    this.el.sheet.classList.add('hidden');
+    this.el.sheet.innerHTML = '';
+    this.cache.sheetSig = null;
+  }
+
+  renderSheet(force) {
+    const key = this.sheetKey;
+    if (!key || !this.state) return;
+    const s = this.state;
+    const info = E.upgradeInfo(s, key);
+    const eff = E.effectText(s, key);
+    const sig = [key, info.lvl, info.cost, info.canBuy, eff].join('|');
+    if (!force && this.cache.sheetSig === sig) return;
+    this.cache.sheetSig = sig;
+    const kind = info.isMachine ? E.MACHINES[key].type : key;
+    const status = info.isMachine && info.lvl === 0 ? '<span class="tag off">ยังไม่เปิดใช้งาน</span>' : info.isMachine ? '<span class="tag on">ทำงานอยู่</span>' : '';
+    this.el.sheet.innerHTML = `<div class="sh-card">
+      <button class="sh-x" aria-label="ปิด">×</button>
+      <div class="sh-head"><span class="sh-ico2 k-${kind}"></span><div><div class="sh-name">${info.isMachine ? E.MACHINES[key].name : info.name}</div><div class="sh-type">${info.title}</div></div></div>
+      <div class="sh-row"><span>ระดับ</span><b>Lv.${info.lvl} / ${info.max}</b>${status}</div>
+      <div class="sh-bar"><i style="width:${(info.lvl / info.max) * 100}%"></i></div>
+      <div class="sh-fx">${eff}</div>
+      <button class="sh-buy ${info.atMax ? 'max' : info.canBuy ? '' : 'off'}" ${info.atMax ? 'disabled' : ''}>${info.atMax ? 'ระดับสูงสุด' : `${info.lvl === 0 && info.isMachine ? 'เปิดใช้งาน' : 'อัปเกรด'} <span class="cur">$</span>${E.fmtCash(info.cost)}`}</button>
+    </div>`;
+    const card = this.el.sheet;
+    card.querySelector('.sh-x').addEventListener('click', (e) => { e.stopPropagation(); this.h.onClick(); this.closeSheet(); });
+    const buy = card.querySelector('.sh-buy');
+    buy.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.h.onBuy(key)) this._pop(buy);
+      this.renderSheet(true);
+    });
   }
 
   // ---------- per-frame ----------
   update(s, game) {
     this.state = s;
-    this.setText('money', this.el.money, E.fmtMoney(s.money));
-    this.setText('income', this.el.income, `+${E.fmtMoney(E.incomePerSec(s))}/วินาที`);
-    this.setText('gb', this.el.gradeBadge, `เกรด ${s.grade}/${E.GRADES.length}`);
-    this.setText('gn', this.el.gradeName, E.gradeOf(s).name);
-    this.setText('cs', this.el.chipSpawn, E.spawnRate(s).toFixed(1) + '/วิ');
-    this.setText('cc', this.el.chipCollect, E.collectRate(s).toFixed(1) + '/วิ');
-    const cap = E.capacity(s);
-    const stored = Math.min(cap, Math.round(game.stored));
-    this.setText('st', this.el.chipStore, `${stored}/${cap}`);
-    const pct = Math.min(100, (stored / cap) * 100);
-    if (this.cache.pct !== Math.round(pct)) {
-      this.cache.pct = Math.round(pct);
-      this.el.storeFill.style.width = pct + '%';
-      this.el.storeBar.classList.toggle('full', pct >= 97);
-      this.el.storeBar.classList.toggle('warn', pct >= 75 && pct < 97);
+    const target = E.stageTarget(s.stage);
+    this.setText('stageTitle', this.el.stageTitle, 'ด่าน ' + s.stage);
+    this.setText('pText', this.el.pText, `${Math.min(s.progress, target)} / ${target}`);
+    const pct = Math.min(100, (s.progress / target) * 100);
+    if (this.cache.pct !== Math.round(pct * 2)) {
+      this.cache.pct = Math.round(pct * 2);
+      this.el.pFill.style.width = pct + '%';
     }
+    this.setText('cash', this.el.cash, E.fmtCash(s.cash));
+    this.setText('gems', this.el.gems, String(Math.floor(s.gems)));
+    const combo = game.combo >= 5 ? `คอมโบ ×${game.combo} · +${Math.round((E.comboBonus(game.combo) - 1) * 100)}%` : '';
+    this.setText('combo', this.el.combo, combo);
+    this.setText('charges', this.el.charges, String(Math.floor(game.charges)));
+    const maxC = E.maxCharges(s);
+    const fill = game.charges >= maxC ? 1 : (game.charges - Math.floor(game.charges) + game.chargeT / E.CHARGE_TIME) / 1;
+    const f = Math.min(1, game.charges >= maxC ? 1 : Math.floor(game.charges) / maxC + (game.chargeT / E.CHARGE_TIME) / maxC);
+    const fs = (f * 100).toFixed(1);
+    if (this.cache.fill !== fs) { this.cache.fill = fs; this.el.dropFill.style.height = fs + '%'; }
+    this.el.drop.classList.toggle('empty', game.charges < 1);
+    this.placeLabels(game.sceneW, game.sceneH);
+    void fill;
   }
 
-  slowUpdate(s) {
+  slowUpdate(s, machines) {
     this.state = s;
-    this.updateCards(false);
-    this.renderTab(false);
+    this.updateLabels();
+    const r = E.upgradeInfo(s, 'rate');
+    this.setText('ratePrice', this.el.ratePrice, r.atMax ? 'MAX' : E.fmtCash(r.cost));
+    this.setText('rateLv', this.el.rateLv, String(r.lvl));
+    this.setText('rateInfo', this.el.rateInfo, E.spawnRate(s).toFixed(1) + '/วิ');
+    this.el.rateBtn.classList.toggle('ready', r.canBuy);
+    for (const p of [this.el.padCap, this.el.padRare]) {
+      const info = E.upgradeInfo(s, p.dataset.key);
+      p.querySelector('.pad-price').textContent = info.atMax ? 'MAX' : '$' + E.fmtCash(info.cost);
+      p.querySelector('.pad-lv').textContent = info.lvl ? 'Lv.' + info.lvl : '';
+      p.classList.toggle('ready', info.canBuy);
+    }
+    if (machines) {
+      const cd = machines.manualCd > 0;
+      this.el.assist.classList.toggle('cd', cd);
+    }
+    this.renderSheet(false);
   }
 
-  // ---------- floating money ----------
+  setAssistProgress(p) {
+    this.el.assist.querySelector('.sh-cd').style.transform = 'scaleX(' + p.toFixed(3) + ')';
+  }
+
+  // ---------- floating cash ----------
   _floats() {
     for (let i = 0; i < 14; i++) {
       const d = document.createElement('div');
@@ -243,7 +209,7 @@ export class UI {
     d.textContent = text;
     d.className = 'float ' + cls;
     const w = this.el.floats.clientWidth;
-    const x = Math.max(6, Math.min(w - 80, px - 28));
+    const x = Math.max(6, Math.min(w - 90, px - 28));
     if (d._anim) d._anim.cancel();
     d._anim = d.animate(
       [
@@ -255,7 +221,7 @@ export class UI {
     );
   }
 
-  toast(msg, ms = 2200) {
+  toast(msg, ms = 2000) {
     const t = this.el.toast;
     t.textContent = msg;
     t.classList.add('show');
@@ -268,10 +234,10 @@ export class UI {
     f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
   }
 
-  banner(grade) {
-    const g = E.GRADES[grade - 1];
-    this.el.bannerTitle.textContent = g.name;
-    this.el.bannerSub.textContent = `เกรด ${g.id} · ${g.fx}`;
+  stageBanner(stage, reward, bonus) {
+    this.el.bannerSmall.textContent = `ผ่านด่าน ${stage} แล้ว!`;
+    this.el.bannerTitle.textContent = `ด่าน ${stage + 1}`;
+    this.el.bannerSub.textContent = `รางวัล +$${E.fmtCash(reward.cash)} · +${reward.gems} เพชร` + (bonus > 0 ? ` · เหรียญคงเหลือ +$${E.fmtCash(bonus)}` : '');
     const b = this.el.banner;
     b.classList.remove('go'); void b.offsetWidth; b.classList.add('go');
     this.flash();
@@ -297,22 +263,37 @@ export class UI {
     this.h.onModal && this.h.onModal(true);
   }
 
-  openSettings() {
+  openMenu() {
     const s = this.state;
     const pixelOn = s.settings.pixel;
     const q = s.settings.quality;
+    const st = s.stats;
+    const rows = [
+      ['รายได้ทั้งหมด', E.fmtMoney(st.totalEarned)],
+      ['เหรียญที่เก็บได้', E.fmtNum(Math.floor(st.coinsCollected))],
+      ['ด่านที่ผ่านแล้ว', String(st.stagesCleared)],
+      ['คอมโบสูงสุด', String(st.bestCombo)],
+      ['อัปเกรดที่ซื้อ', String(st.upgradesBought)],
+      ['ปล่อยเหรียญเอง', String(st.manualDrops)],
+      ['ลูกสูบช่วยอัตโนมัติ', String(st.autoPushes | 0)],
+      ['ช่วยดันด้วยมือ', String(st.manualPushes | 0)],
+      ['รายได้ออฟไลน์รวม', E.fmtMoney(st.offlineEarned)],
+      ['เวลาที่เล่น', E.fmtDuration(st.playSeconds)],
+    ];
     this._open(
-      `<div class="dlg"><h2>ตั้งค่า</h2>
+      `<div class="dlg"><h2>เมนู</h2>
       <div class="row"><div>เอฟเฟกต์พิกเซลเรโทร<div class="sub">Retro Pixel Effect</div></div>
         <div class="seg" id="sPixel"><button data-v="1" class="${pixelOn ? 'on' : ''}">เปิด ON</button><button data-v="0" class="${!pixelOn ? 'on off' : ''}">ปิด OFF</button></div></div>
       <div class="row"><div>เสียงเอฟเฟกต์</div><input id="sSfx" type="range" min="0" max="100" value="${Math.round(s.settings.sfx * 100)}"></div>
       <div class="row"><div>เสียงดนตรี</div><input id="sMusic" type="range" min="0" max="100" value="${Math.round(s.settings.music * 100)}"></div>
-      <div class="row"><div>คุณภาพกราฟิก<div class="sub">ต่ำ = ลื่นกว่า</div></div>
+      <div class="row"><div>คุณภาพกราฟิก<div class="sub">ต่ำ = ลื่นกว่า (ปิดเงา)</div></div>
         <div class="seg" id="sQ">${['low', 'medium', 'high'].map((k) => `<button data-v="${k}" class="${q === k ? 'on' : ''}">${QUALITY_TH[k]}</button>`).join('')}</div></div>
+      <div class="sec-title">สถิติ</div>
+      ${rows.map((r) => `<div class="kv"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')}
       <div class="row"><div>เวอร์ชัน<div class="sub">${this.h.version}${this.h.inIframe ? ' · ฝังใน iframe' : ''}</div></div><button class="small-btn" id="sUpd">เช็กอัปเดต</button></div>
       <div class="row" id="resetRow"><div>รีเซ็ตความคืบหน้า<div class="sub">ลบเงินและอัปเกรดทั้งหมด</div></div><button class="small-btn" id="sReset" style="background:var(--red)">รีเซ็ต</button></div>
       <button class="big-btn close" id="sClose">ปิด</button></div>`,
-      'settings'
+      'menu'
     );
     const m = this.el.modal;
     m.querySelector('#sPixel').addEventListener('click', (e) => {
@@ -338,7 +319,7 @@ export class UI {
       const row = m.querySelector('#resetRow');
       row.innerHTML = '<div style="color:var(--red)">ยืนยันลบข้อมูลทั้งหมด?</div><div class="seg"><button id="rYes" style="background:var(--red)">ลบเลย</button><button id="rNo">ยกเลิก</button></div>';
       row.querySelector('#rYes').addEventListener('click', () => { this.closeModal(); this.h.onReset(); });
-      row.querySelector('#rNo').addEventListener('click', () => { this.closeModal(); this.openSettings(); });
+      row.querySelector('#rNo').addEventListener('click', () => { this.closeModal(); this.openMenu(); });
     });
     m.addEventListener('click', (e) => { if (e.target === m) this.closeModal(); }, { once: true });
   }
@@ -348,8 +329,8 @@ export class UI {
       `<div class="dlg"><h2>ยินดีต้อนรับกลับ!</h2>
       <div class="offline-meta">คุณไม่อยู่ ${E.fmtDuration(info.elapsed)}${info.capped ? `<br>(นับสูงสุด ${E.fmtDuration(info.counted)})` : ''}</div>
       <div class="offline-gain" id="offGain">+$0</div>
-      <div class="offline-meta">โรงงานผลิตและเก็บได้ราว ${E.fmtNum(info.objects)} ชิ้น</div>
-      <div class="note" style="text-align:center">รายได้ออฟไลน์คิดที่ ${Math.round(E.OFFLINE_EFFICIENCY * 100)}% ของปกติ · สะสมได้สูงสุด ${E.fmtDuration(info.cap)} (อัปเกรดความจุคลังเพื่อเพิ่ม)</div>
+      <div class="offline-meta">เครื่องเก็บเหรียญได้ราว ${E.fmtNum(info.coins)} เหรียญ</div>
+      <div class="note" style="text-align:center">รายได้ออฟไลน์คิดที่ ${Math.round(E.OFFLINE_EFFICIENCY * 100)}% ของปกติ · สะสมได้สูงสุด ${E.fmtDuration(info.cap)} (อัปเกรดความจุเพื่อเพิ่ม)</div>
       <button class="big-btn close" id="offOk">รับเงิน!</button></div>`,
       'offline'
     );

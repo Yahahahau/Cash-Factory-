@@ -1,36 +1,29 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { L, PEGS, PEG_R, DEFLECTORS, DEFLECTOR_VIS_THICK, COIN_TYPES, GEM_COLLIDER_SCALE, SLOT_DEPTH } from './layout.js';
+import { IN_HALF, WALL_W, Z_HALF, SLAB_Z, COIN_TYPES, RARE_COLLIDER_SCALE } from './layout.js';
 
-// Rapier cylinders have their axis along local Y. Coin meshes are built with their axis along Z
-// (geometry.rotateX(90deg)), so every coin collider gets this same local rotation.
-export const COLLIDER_ROT = { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
 const PARK = { x: 0, y: -50, z: 0 };
 
-// collision groups (membership << 16 | filter): coins hit everything; static parts only hit coins;
-// pusher plates only hit coins (they glide between the pegs).
-const G_COIN = 0x0001;
-const G_STATIC = 0x0002;
-const G_PUSH = 0x0004;
-const GROUPS = {
+// collision groups (membership << 16 | filter): coins hit everything; static parts and pistons only hit coins.
+const G_COIN = 1, G_STATIC = 2, G_PUSH = 4;
+export const GROUPS = {
   coin: (G_COIN << 16) | (G_COIN | G_STATIC | G_PUSH),
   static: (G_STATIC << 16) | G_COIN,
   push: (G_PUSH << 16) | G_COIN,
 };
-
-export const COLLISION_GROUPS = GROUPS;
 
 export async function loadRapier() {
   await RAPIER.init();
   return RAPIER;
 }
 
-// collider dimensions for a coin type (shared by physics and, via layout.js, by the renderer)
+// collider size for a coin type (the rendered mesh uses the same COIN_TYPES numbers)
 export function colliderSize(type) {
   const c = COIN_TYPES[type];
-  const r = c.segments === 6 ? c.radius * GEM_COLLIDER_SCALE : c.radius;
+  const r = c.segments <= 8 ? c.radius * RARE_COLLIDER_SCALE : c.radius;
   return { radius: r, halfHeight: c.thickness / 2 };
 }
 
+const zq = (a) => ({ x: 0, y: 0, z: Math.sin(a / 2), w: Math.cos(a / 2) });
 function qMul(a, b) {
   return {
     w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
@@ -48,60 +41,53 @@ export class Physics {
   constructor(maxBodies) {
     this.max = maxBodies;
     this.R = RAPIER;
-    this.world = new RAPIER.World({ x: 0, y: -20, z: 0 });
+    this.world = new RAPIER.World({ x: 0, y: -18, z: 0 });
     this.world.timestep = 1 / 60;
     try { this.world.integrationParameters.numSolverIterations = 8; } catch { /* older API */ }
     this.time = 0;
     this.slots = [];
     this.free = [];
     this.active = []; // slot indices in play (state 1)
-    this.sucking = []; // slot indices being pulled into the collector (state 2)
-    this.beforeStep = null; // hook: (dt) => void, used by the pusher to drive its kinematic plates
-    this._buildStatic();
+    this.sucking = []; // slot indices being swallowed by the grinder (state 2, visual only)
+    this.beforeStep = null; // hook (dt): machines drive pistons / apply forces
+    this.stage = null;
+    this.statics = [];
     this._buildPool();
   }
 
   _fixed(desc) {
-    return this.world.createCollider(desc.setCollisionGroups(GROUPS.static));
+    const c = this.world.createCollider(desc.setCollisionGroups(GROUPS.static));
+    this.statics.push(c);
+    return c;
   }
 
-  _buildStatic() {
+  // (re)build every static collider for a stage layout
+  buildStage(def) {
+    for (const c of this.statics) this.world.removeCollider(c, false);
+    this.statics = [];
+    this.stage = def;
     const R = RAPIER;
-    const w = L.innerHalfW;
-    const zq = (a) => ({ x: 0, y: 0, z: Math.sin(a / 2), w: Math.cos(a / 2) });
+    const cy = 7.6;
     // side walls
     for (const sx of [-1, 1]) {
-      this._fixed(R.ColliderDesc.cuboid(L.wallHalfW, 7.5, 1.0).setTranslation(sx * (w + L.wallHalfW), 7.2, 0).setFriction(0.1).setRestitution(0.3));
+      this._fixed(R.ColliderDesc.cuboid(WALL_W / 2, 9, 1.0).setTranslation(sx * (IN_HALF + WALL_W / 2), cy, 0).setFriction(0.1).setRestitution(0.3));
     }
-    // invisible front/back glass keeps coins inside the slot (this is what makes the game 2.5D)
+    // invisible front/back glass keeps coins inside the shallow slot (this is what makes it 2.5D)
     for (const sz of [-1, 1]) {
-      this._fixed(R.ColliderDesc.cuboid(3.4, 7.7, 0.5).setTranslation(0, 7.2, sz * (SLOT_DEPTH / 2 + 0.5)).setFriction(0.05).setRestitution(0.1));
+      this._fixed(R.ColliderDesc.cuboid(4, 9, 0.5).setTranslation(0, cy, sz * (Z_HALF + 0.5)).setFriction(0.03).setRestitution(0.1));
     }
-    // floor: thick collider, sloped towards the exit on the right
-    const f = L.floor;
-    this._fixed(
-      R.ColliderDesc.cuboid(f.halfLen, f.thick / 2, 0.8).setTranslation(0, f.y, 0).setRotation(zq(f.ang)).setFriction(0.6).setRestitution(0.25)
-    );
-    // pegs: full-depth cylinders along Z
-    for (const p of PEGS) {
-      this._fixed(R.ColliderDesc.cylinder(0.5, PEG_R).setTranslation(p.x, p.y, 0).setRotation(COLLIDER_ROT).setRestitution(0.45).setFriction(0.15));
-    }
-    // funnel plates (collider thicker than the visual; shifted down so the top surfaces coincide)
-    for (const d of DEFLECTORS) {
-      const off = (d.thick - DEFLECTOR_VIS_THICK) / 2;
+    // platforms / columns / belts
+    for (const b of def.blocks) {
+      const hx = (b.x1 - b.x0) / 2, hy = (b.y1 - b.y0) / 2;
       this._fixed(
-        R.ColliderDesc.cuboid(d.halfLen, d.thick / 2, 0.8)
-          .setTranslation(d.x + Math.sin(d.ang) * off, d.y - Math.cos(d.ang) * off, 0)
-          .setRotation(zq(d.ang))
-          .setFriction(0.2)
-          .setRestitution(0.3)
+        R.ColliderDesc.cuboid(hx, hy, SLAB_Z).setTranslation((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, 0).setFriction(b.kind === 'belt' ? 0.9 : 0.6).setRestitution(0.18)
       );
     }
-    // swinging paddle (kinematic)
-    const p = L.paddle;
-    this.paddle = this.world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(p.x, p.y, 0));
-    this.world.createCollider(R.ColliderDesc.cuboid(p.halfLen, 0.12, SLOT_DEPTH / 2 + 0.1).setFriction(0.25).setRestitution(0.5).setCollisionGroups(GROUPS.static), this.paddle);
-    this.paddleAngle = 0;
+    for (const p of def.plates) {
+      this._fixed(R.ColliderDesc.cuboid(p.halfLen, p.thick / 2, SLAB_Z).setTranslation(p.cx, p.cy, 0).setRotation(zq(p.ang)).setFriction(0.25).setRestitution(0.25));
+    }
+    // grinder pit floor
+    this._fixed(R.ColliderDesc.cuboid(2.0, 0.3, SLAB_Z).setTranslation(-1.2, -0.3, 0).setFriction(0.5).setRestitution(0.1));
   }
 
   _buildPool() {
@@ -109,19 +95,14 @@ export class Physics {
     const t0 = colliderSize(0);
     for (let i = 0; i < this.max; i++) {
       const body = this.world.createRigidBody(
-        R.RigidBodyDesc.dynamic()
-          .setTranslation(PARK.x, PARK.y, PARK.z)
-          .setLinearDamping(0.05)
-          .setAngularDamping(0.35)
-          .setCcdEnabled(true) // thin coins vs thin plates: never tunnel
-          .setCanSleep(true)
+        R.RigidBodyDesc.dynamic().setTranslation(PARK.x, PARK.y, PARK.z).setLinearDamping(0.05).setAngularDamping(0.35).setCcdEnabled(true).setCanSleep(true)
       );
       const collider = this.world.createCollider(
-        R.ColliderDesc.cylinder(t0.halfHeight, t0.radius).setRotation(COLLIDER_ROT).setRestitution(0.35).setFriction(0.45).setDensity(1).setCollisionGroups(GROUPS.coin),
+        R.ColliderDesc.cylinder(t0.halfHeight, t0.radius).setRestitution(0.3).setFriction(0.5).setDensity(1).setCollisionGroups(GROUPS.coin),
         body
       );
       body.setEnabled(false);
-      this.slots.push({ body, collider, state: 0, type: 0, shape: 0, n: 1, born: 0, sx: 0, sy: 0, st: 0, q: null, lowT: 0 });
+      this.slots.push({ body, collider, state: 0, type: 0, shape: 0, mult: 1, born: 0, sx: 0, sy: 0, sz: 0, st: 0, q: null, lowT: 0, grace: 0, helped: 0 });
       this.free.push(i);
     }
   }
@@ -130,31 +111,34 @@ export class Physics {
     return this.free.length;
   }
 
-  // spawn a coin at (x, y) with a random orientation (mostly facing the camera, slightly tilted)
-  spawn(x, y, type, n) {
+  // drop a coin at (x, y) with a random orientation (cylinder axis starts near vertical: it lands flat or on its edge)
+  spawn(x, y, type, mult = 1, vx = 0, vy = -2) {
     const idx = this.free.pop();
     if (idx === undefined) return -1;
     const s = this.slots[idx];
     s.state = 1;
     s.type = type;
-    s.n = n;
+    s.mult = mult;
     s.born = this.time;
     s.lowT = 0;
     s.grace = 0;
+    s.helped = 0;
+    s.gated = false;
     if (s.shape !== type) {
       const cs = colliderSize(type);
       s.collider.setRadius(cs.radius);
       s.collider.setHalfHeight(cs.halfHeight);
       s.shape = type;
     }
-    let q = qAxis(0, 0, 1, Math.random() * Math.PI * 2);
-    q = qMul(q, qAxis(1, 0, 0, (Math.random() - 0.5) * 0.7));
-    q = qMul(q, qAxis(0, 1, 0, (Math.random() - 0.5) * 0.7));
+    // random tilt (up to ~70°) about X and Z plus a free spin about Y: every coin looks different and tumbles differently
+    let q = qAxis(0, 1, 0, Math.random() * Math.PI * 2);
+    q = qMul(q, qAxis(1, 0, 0, (Math.random() - 0.5) * 2.4));
+    q = qMul(q, qAxis(0, 0, 1, (Math.random() - 0.5) * 2.4));
     s.body.setEnabled(true);
-    s.body.setTranslation({ x, y, z: (Math.random() - 0.5) * 0.06 }, true);
+    s.body.setTranslation({ x, y, z: (Math.random() - 0.5) * 0.12 }, true);
     s.body.setRotation(q, true);
-    s.body.setLinvel({ x: (Math.random() - 0.5) * 1.2, y: -2, z: 0 }, true);
-    s.body.setAngvel({ x: (Math.random() - 0.5) * 3, y: (Math.random() - 0.5) * 3, z: (Math.random() - 0.5) * 6 }, true);
+    s.body.setLinvel({ x: vx + (Math.random() - 0.5) * 0.8, y: vy, z: 0 }, true);
+    s.body.setAngvel({ x: (Math.random() - 0.5) * 5, y: (Math.random() - 0.5) * 5, z: (Math.random() - 0.5) * 5 }, true);
     this.active.push(idx);
     return idx;
   }
@@ -170,14 +154,12 @@ export class Physics {
     this.free.push(idx);
   }
 
-  // hand a coin over to the collector animation (the coin leaves the simulation, it is *collected*)
+  // coin reached the grinder: it leaves the simulation (it was *collected*, not teleported)
   beginSuck(idx) {
     const s = this.slots[idx];
     const p = s.body.translation();
     const q = s.body.rotation();
-    s.sx = p.x;
-    s.sy = p.y;
-    s.sz = p.z;
+    s.sx = p.x; s.sy = p.y; s.sz = p.z;
     s.q = { x: q.x, y: q.y, z: q.z, w: q.w };
     s.st = 0;
     s.state = 2;
@@ -196,36 +178,31 @@ export class Physics {
     this.free.push(idx);
   }
 
+  // one fixed step; returns the slots that reached the grinder and the ones that escaped the machine (safety net)
   step(dt) {
     this.time += dt;
-    this.paddleAngle = Math.sin(this.time * 1.7) * L.paddle.maxAng;
-    const a = this.paddleAngle;
-    this.paddle.setNextKinematicRotation({ x: 0, y: 0, z: Math.sin(a / 2), w: Math.cos(a / 2) });
     if (this.beforeStep) this.beforeStep(dt);
     this.world.step();
-    // recycle anything that escaped the playfield (safety net; should never happen)
-    const out = [];
+    const collected = [];
+    const escaped = [];
+    const pit = this.stage ? this.stage.pit : null;
     for (const idx of this.active) {
       const p = this.slots[idx].body.translation();
-      if (p.y < -1.5 || Math.abs(p.x) > 4.2 || p.y > 14 || Math.abs(p.z) > 0.6) out.push(idx);
+      if (pit && p.y < pit.collectY && p.x > pit.x0 - 0.1 && p.x < pit.x1 + 0.4) collected.push(idx);
+      else if (p.y < -1.5 || Math.abs(p.x) > IN_HALF + WALL_W || p.y > 17 || Math.abs(p.z) > SLAB_Z + 0.1) escaped.push(idx);
     }
-    return out;
+    return { collected, escaped };
   }
 
-  // nearest active object to (x,y); returns idx or -1
-  nearest(x, y, binOnly, maxDist = Infinity) {
+  // nearest active coin to (x,y) within maxDist; returns idx or -1
+  nearest(x, y, maxDist = Infinity) {
     let best = -1;
     let bd = maxDist * maxDist;
     for (const idx of this.active) {
       const p = this.slots[idx].body.translation();
-      if (binOnly && p.y > L.binTop) continue;
-      const dx = p.x - x;
-      const dy = p.y - y;
+      const dx = p.x - x, dy = p.y - y;
       const d = dx * dx + dy * dy;
-      if (d < bd) {
-        bd = d;
-        best = idx;
-      }
+      if (d < bd) { bd = d; best = idx; }
     }
     return best;
   }

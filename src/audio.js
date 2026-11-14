@@ -94,6 +94,13 @@ export class GameAudio {
     this._tone(this.sfxBus, this.ctx.currentTime, 660, 0.06, 'square', 0.12, 880);
   }
 
+  drop() {
+    if (!this._ok()) return;
+    const t = this.ctx.currentTime;
+    this._tone(this.sfxBus, t, 440, 0.07, 'square', 0.14, 300);
+    this._tone(this.sfxBus, t + 0.05, 330, 0.09, 'triangle', 0.12, 220);
+  }
+
   clunk() {
     if (!this._ok()) return;
     const t = this.ctx.currentTime;

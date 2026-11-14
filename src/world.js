@@ -1,58 +1,101 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { L, PEGS, PEG_R, DEFLECTORS, DEFLECTOR_VIS_THICK, COIN_TYPES, SLOT_DEPTH, PISTONS, PISTON_PLATE } from './layout.js';
-import { GRADES } from './economy.js';
+import { IN_HALF, WALL_W, SLAB_Z, Z_HALF, VIEW_HALF_W, VIEW_TOP, COIN_TYPES, HEAD } from './layout.js';
 
 const FONT_PIXEL = '"Press Start 2P", monospace';
 
-function pixelTexture(canvas, repeat, smoothMin = false) {
-  const t = new THREE.CanvasTexture(canvas);
-  t.magFilter = THREE.NearestFilter;
-  t.minFilter = smoothMin ? THREE.LinearFilter : THREE.NearestFilter;
-  t.generateMipmaps = false;
-  t.colorSpace = THREE.SRGBColorSpace;
-  if (repeat) {
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(repeat[0], repeat[1]);
-  }
-  return t;
-}
-
-function makePattern(kind) {
+// ---------- small canvas helpers ----------
+function canvasTex(w, h, draw, opts = {}) {
   const c = document.createElement('canvas');
-  c.width = c.height = 16;
-  const g = c.getContext('2d');
-  if (kind === 'panel') {
-    g.fillStyle = '#ffffff';
-    g.fillRect(0, 0, 16, 16);
-    g.fillStyle = 'rgba(0,0,0,0.10)';
-    for (let i = 0; i < 16; i += 2) { g.fillRect(i, i, 2, 2); g.fillRect((i + 8) % 16, i, 2, 2); }
-    g.fillStyle = 'rgba(255,255,255,0.35)';
-    g.fillRect(0, 0, 16, 1);
-    g.fillRect(0, 0, 1, 16);
-  } else if (kind === 'wall') {
-    g.fillStyle = '#ffffff';
-    g.fillRect(0, 0, 16, 16);
-    g.fillStyle = 'rgba(0,0,0,0.16)';
-    g.fillRect(0, 7, 16, 1); g.fillRect(0, 15, 16, 1);
-    g.fillRect(3, 0, 1, 7); g.fillRect(11, 8, 1, 7);
-    g.fillStyle = 'rgba(255,255,255,0.18)';
-    g.fillRect(0, 0, 16, 1); g.fillRect(0, 8, 16, 1);
-  } else if (kind === 'belt') {
-    g.fillStyle = '#ffffff';
-    g.fillRect(0, 0, 16, 16);
-    g.fillStyle = 'rgba(0,0,0,0.35)';
-    for (let x = 0; x < 16; x += 4) g.fillRect(x, 0, 2, 16);
-  }
-  return c;
+  c.width = w;
+  c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.magFilter = opts.nearest ? THREE.NearestFilter : THREE.LinearFilter;
+  t.minFilter = THREE.LinearFilter;
+  t.generateMipmaps = false;
+  if (opts.repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
 }
 
-function gradientMap() {
-  const d = new Uint8Array([70, 150, 215, 255]);
-  const t = new THREE.DataTexture(d, 4, 1, THREE.RedFormat);
-  t.minFilter = t.magFilter = THREE.NearestFilter;
-  t.needsUpdate = true;
-  return t;
+// platform front: soft vertical light gradient + slim darker outline on the lower / side edges
+function slabFrontTex() {
+  return canvasTex(64, 64, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, 0, h);
+    gr.addColorStop(0, '#ffffff');
+    gr.addColorStop(0.5, '#eef3fc');
+    gr.addColorStop(1, '#bfcbe4');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillRect(0, 0, w, 2);
+    g.fillStyle = 'rgba(70,86,128,0.55)'; g.fillRect(0, h - 3, w, 3);
+    g.fillStyle = 'rgba(70,86,128,0.28)'; g.fillRect(0, 0, 2, h); g.fillRect(w - 2, 0, 2, h);
+    g.fillStyle = 'rgba(70,86,128,0.05)';
+    for (let i = 0; i < 40; i++) g.fillRect(((i * 37) % w) | 0, ((i * 19) % (h - 6)) | 0, 2, 2);
+  });
+}
+function slabTopTex() {
+  return canvasTex(32, 32, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, 0, h);
+    gr.addColorStop(0, '#ffffff');
+    gr.addColorStop(1, '#e3eaf7');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(70,86,128,0.35)'; g.fillRect(0, h - 2, w, 2);
+  });
+}
+function slabSideTex() {
+  return canvasTex(16, 16, (g, w, h) => {
+    g.fillStyle = '#dbe3f3';
+    g.fillRect(0, 0, w, h);
+  });
+}
+function wallTex() {
+  return canvasTex(64, 16, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, w, 0);
+    gr.addColorStop(0, '#c4cfe6');
+    gr.addColorStop(0.35, '#ffffff');
+    gr.addColorStop(1, '#eaf0fb');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+  });
+}
+function beltTopTex() {
+  return canvasTex(32, 16, (g, w, h) => {
+    g.fillStyle = '#2a3146';
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = '#58617f';
+    for (let x = 0; x < w; x += 8) { g.fillRect(x, 0, 4, h); }
+    g.fillStyle = '#7a86ab';
+    for (let x = 0; x < w; x += 8) { g.fillRect(x, 0, 4, 2); }
+  }, { repeat: true, nearest: true });
+}
+function hazardTex() {
+  return canvasTex(32, 32, (g, w, h) => {
+    g.fillStyle = '#ffd21f';
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = '#1b1d24';
+    for (let i = -h; i < w + h; i += 16) {
+      g.beginPath(); g.moveTo(i, h); g.lineTo(i + 8, h); g.lineTo(i + 8 + h, 0); g.lineTo(i + h, 0); g.closePath(); g.fill();
+    }
+  }, { repeat: true, nearest: true });
+}
+function chevronTex() {
+  return canvasTex(32, 32, (g, w, h) => {
+    g.fillStyle = '#ff9e1a'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#fff2b0'; g.lineWidth = 5; g.lineJoin = 'miter';
+    for (let y = -4; y < h; y += 14) { g.beginPath(); g.moveTo(4, y + 12); g.lineTo(w / 2, y); g.lineTo(w - 4, y + 12); g.stroke(); }
+  }, { nearest: true });
+}
+function labelTex(text, bg, fg) {
+  return canvasTex(128, 64, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = bg; g.fillRect(0, 0, w, h);
+    g.fillStyle = fg; g.font = `bold 40px ${FONT_PIXEL}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(text, w / 2, h / 2 + 3);
+  }, { nearest: true });
 }
 
 class Particles {
@@ -97,7 +140,7 @@ class Particles {
       p.vy -= p.g * dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       p.rot += dt * 4;
-      const k = Math.min(1, p.life / p.max * 1.6);
+      const k = Math.min(1, (p.life / p.max) * 1.6);
       const sz = p.size * k;
       this.pos.set(p.x, p.y, p.z);
       this.q.setFromAxisAngle(this.s.set(0, 0, 1), p.rot);
@@ -114,383 +157,126 @@ class Particles {
   }
 }
 
+const BG_VERT = /* glsl */ `
+varying vec3 vW;
+void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }
+`;
+// horizontal "cylinder" shading: bright in the middle, dark at the walls; a touch lighter towards the top
+const BG_FRAG = /* glsl */ `
+precision highp float;
+uniform vec3 cEdge; uniform vec3 cMid; uniform float lowRes;
+varying vec3 vW;
+float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main(){
+  float t = clamp(abs(vW.x) / 3.0, 0.0, 1.0);
+  float k = smoothstep(0.05, 1.0, pow(t, 0.85));
+  vec3 c = mix(cMid, cEdge, k);
+  c *= 0.9 + 0.12 * clamp(vW.y / 15.0, 0.0, 1.0);
+  c += (h(floor(vW.xy * 14.0)) - 0.5) * 0.012;
+  gl_FragColor = vec4(c, 1.0);
+  #include <colorspace_fragment>
+}
+`;
+
 export class World {
   constructor(canvas, opts) {
-    this.canvas = canvas;
     this.maxBodies = opts.maxBodies;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
-    this.renderer.setClearColor(0x14182b, 1);
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.renderer.setClearColor(0x10131f, 1);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
-    // orthographic 2.5D camera: real 3D scene, no perspective distortion
-    this.camera = new THREE.OrthographicCamera(-5, 5, 8, -8, 0.1, 200);
-    this.gm = gradientMap();
-    this.pal = {
-      body: new THREE.Color(GRADES[0].body), accent: new THREE.Color(GRADES[0].accent),
-      trim: new THREE.Color(GRADES[0].trim), light: new THREE.Color(GRADES[0].light),
-    };
-    this.palTarget = {
-      body: new THREE.Color(GRADES[0].body), accent: new THREE.Color(GRADES[0].accent),
-      trim: new THREE.Color(GRADES[0].trim), light: new THREE.Color(GRADES[0].light),
-    };
+    this.camera = new THREE.OrthographicCamera(-4, 4, 8, -8, 0.1, 200);
+    this._cy = VIEW_TOP / 2;
     this.t = 0;
     this.shake = 0;
-    this.pop = 0;
-    this.grade = 1;
-    this.nozzleCount = 1;
-    this.pulse = 0; // collection activity 0..1 for the pipe animation
-    this.smokeT = 0;
-    this.sparkT = 0;
-    this.machine = new THREE.Group();
-    this.scene.add(this.machine);
-    this._mats();
-    this._build();
-    this.particles = new Particles(this.scene, opts.particles || 180);
-    this._lights();
-    this.setGrade(1, false);
-    this._camDist = 24;
-    this._cy = 6.1;
-    this._shakeOff = new THREE.Vector3();
-  }
+    this.pulse = 0;
+    this.pipeKick = 0;
+    this.stageGroup = null;
+    this._geos = [];
+    this.vis = { pistons: [], belts: [], fans: [], magnets: [], launchers: [], gates: [], rollers: [], streaks: [] };
 
-  tm(color, extra = {}) {
-    return new THREE.MeshToonMaterial({ color, gradientMap: this.gm, ...extra });
-  }
-
-  _mats() {
-    const panelTex = pixelTexture(makePattern('panel'), [3, 6]);
-    const wallTex = pixelTexture(makePattern('wall'), [10, 12]);
-    this.beltTex = pixelTexture(makePattern('belt'), [8, 1]);
-    this.m = {
-      body: this.tm(0xffffff, { color: this.pal.body.clone() }),
-      panel: this.tm(0xffffff, { map: panelTex, color: this.pal.body.clone().multiplyScalar(0.55) }),
-      accent: this.tm(this.pal.accent.clone()),
-      trim: this.tm(this.pal.trim.clone()),
-      dark: this.tm(0x23283f),
-      wall: this.tm(0xffffff, { map: wallTex, color: new THREE.Color(0x2a3152) }),
-      belt: this.tm(0xffffff, { map: this.beltTex, color: 0x4b5168 }),
-      glow: new THREE.MeshBasicMaterial({ color: 0xfff2a0 }),
-      peg: this.tm(0xe6ecfa),
-      copper: this.tm(0xd9833b),
-      gold: this.tm(0xffc82e),
-      cyan: new THREE.MeshBasicMaterial({ color: 0x66f7ff }),
-    };
-  }
-
-  _box(w, h, d, mat, x, y, z, parent = this.machine) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    m.position.set(x, y, z);
-    parent.add(m);
-    return m;
-  }
-
-  _signTexture(text, w, h, font, fg, bg) {
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const g = c.getContext('2d');
-    g.fillStyle = bg; g.fillRect(0, 0, w, h);
-    g.fillStyle = 'rgba(255,255,255,0.15)'; g.fillRect(0, 0, w, 2);
-    g.fillStyle = fg; g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(text, w / 2, h / 2 + 1);
-    return c;
-  }
-
-  _build() {
-    const M = this.m;
-    // --- backdrop wall + floor
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(60, 50), M.wall);
-    wall.position.set(0, 10, -4);
-    this.scene.add(wall);
-    const ground = new THREE.Mesh(new THREE.BoxGeometry(60, 1, 14), this.tm(0x1c2038));
-    ground.position.set(0, -1.2, 2);
-    this.scene.add(ground);
-
-    // --- main frame
-    this._box(6.7, 11.9, 0.3, M.panel, 0, 5.75, -(SLOT_DEPTH / 2 + 0.15));
-    for (const sx of [-1, 1]) {
-      this._box(0.56, 12.1, 1.3, M.body, sx * 3.28, 5.8, 0);
-      this._box(0.12, 12.1, 0.14, M.trim, sx * 3.0, 5.8, 0.68);
-      this._box(0.16, 12.1, 0.16, M.accent, sx * 3.56, 5.8, 0.62);
-    }
-    // base / conveyor housing
-    this._box(7.9, 1.0, 1.7, M.body, 0, -0.1, 0.1);
-    this._box(7.9, 0.14, 1.74, M.accent, 0, 0.42, 0.1);
-    this.baseSign = this._box(3.6, 0.72, 0.05, new THREE.MeshBasicMaterial({ color: 0xffffff }), 0, -0.1, 0.97);
-    // sloped belt (visual)
-    const f = L.floor;
-    this.belt = new THREE.Mesh(new THREE.BoxGeometry(f.halfLen * 2, f.visThick, SLOT_DEPTH + 0.04), M.belt);
-    this.belt.position.set(0, f.y + (f.thick - f.visThick) / 2, 0);
-    this.belt.rotation.z = f.ang;
-    this.machine.add(this.belt);
-    // deflectors
-    for (const d of DEFLECTORS) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(d.halfLen * 2, DEFLECTOR_VIS_THICK, SLOT_DEPTH + 0.04), M.trim);
-      b.position.set(d.x, d.y, 0); b.rotation.z = d.ang;
-      this.machine.add(b);
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(d.halfLen * 2, 0.05, SLOT_DEPTH + 0.06), M.accent);
-      stripe.position.set(d.x, d.y + 0.07, 0); stripe.rotation.z = d.ang;
-      this.machine.add(stripe);
-    }
-    // pegs
-    const pegGeo = new THREE.CylinderGeometry(PEG_R, PEG_R, SLOT_DEPTH + 0.04, 14);
-    pegGeo.rotateX(Math.PI / 2);
-    this.pegs = new THREE.InstancedMesh(pegGeo, M.peg, PEGS.length);
-    const mt = new THREE.Matrix4();
-    PEGS.forEach((p, i) => { mt.makeTranslation(p.x, p.y, 0); this.pegs.setMatrixAt(i, mt); });
-    this.machine.add(this.pegs);
-    // paddle
-    this.paddle = new THREE.Group();
-    this.paddle.position.set(L.paddle.x, L.paddle.y, 0);
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(L.paddle.halfLen * 2, 0.18, SLOT_DEPTH + 0.04), M.copper);
-    this.paddle.add(bar);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, SLOT_DEPTH + 0.1, 12).rotateX(Math.PI / 2), M.trim);
-    this.paddle.add(hub);
-    for (const sx of [-1, 1]) {
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, SLOT_DEPTH + 0.06), M.accent);
-      cap.position.x = sx * L.paddle.halfLen;
-      this.paddle.add(cap);
-    }
-    this.machine.add(this.paddle);
-
-    // --- anti-jam pistons: housing outside the wall, port in the wall, rod + pushing head inside the slot
-    this.pistons = PISTONS.map((def) => {
-      const w = -def.dir; // +1 = right wall
-      const g = new THREE.Group();
-      const port = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, SLOT_DEPTH + 0.08), M.dark);
-      port.position.set(w * 3.0, def.y, 0);
-      const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.55, 14).rotateZ(Math.PI / 2), M.trim);
-      housing.position.set(w * 3.55, def.y, 0.56);
-      const capm = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.12, 12).rotateZ(Math.PI / 2), M.accent);
-      capm.position.set(w * 3.86, def.y, 0.56);
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), new THREE.MeshBasicMaterial({ color: 0x3a4a30 }));
-      lamp.position.set(w * 3.55, def.y + 0.36, 0.56);
-      const rod = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 0.1), M.trim);
-      const head = new THREE.Mesh(new THREE.BoxGeometry(PISTON_PLATE.halfX * 2, PISTON_PLATE.halfY * 2, SLOT_DEPTH - 0.02), M.copper);
-      g.add(port, housing, capm, lamp, rod, head);
-      this.machine.add(g);
-      return { def, w, rod, head, lamp };
-    });
-
-    // --- top housing + sign + nozzles
-    this._box(7.4, 1.25, 1.5, M.body, 0, 11.65, 0);
-    this._box(7.6, 0.18, 1.6, M.accent, 0, 10.98, 0);
-    this._box(7.6, 0.18, 1.6, M.trim, 0, 12.32, 0);
-    this.signMat = new THREE.MeshBasicMaterial({ map: null });
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 0.8), this.signMat);
-    sign.position.set(0, 11.7, 0.77);
-    this.machine.add(sign);
-    this.nozzles = [];
-    L.nozzleXs.forEach((x, i) => {
-      const g = new THREE.Group();
-      g.position.set(x, 10.9, 0);
-      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.5, 12), M.trim);
-      pipe.position.y = 0.25; g.add(pipe);
-      const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.22, 0.6, 12), M.accent);
-      cone.position.y = -0.25; g.add(cone);
-      const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.06, 10), M.glow);
-      glow.position.y = -0.58; g.add(glow);
-      g.userData = { glow, scale: i === 0 ? 1 : 0, target: i === 0 ? 1 : 0 };
-      g.scale.setScalar(g.userData.scale || 0.0001);
-      this.machine.add(g);
-      this.nozzles.push(g);
-    });
-    // blinking lamps
-    this.lamps = [];
-    for (let i = 0; i < 7; i++) {
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.12), new THREE.MeshBasicMaterial({ color: 0xff5470 }));
-      lamp.position.set(-3.1 + i * 1.03, 12.32, 0.8);
-      this.machine.add(lamp);
-      this.lamps.push(lamp);
-    }
-    // gears
-    this.gears = [];
-    for (const sx of [-1, 1]) {
-      const gear = new THREE.Group();
-      gear.position.set(sx * 3.55, 9.9, 0.85);
-      gear.add(new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.22, 12).rotateX(Math.PI / 2), M.copper));
-      for (let k = 0; k < 8; k++) {
-        const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.3, 0.22), M.copper);
-        const a = (k / 8) * Math.PI * 2;
-        tooth.position.set(Math.cos(a) * 0.62, Math.sin(a) * 0.62, 0);
-        tooth.rotation.z = a;
-        gear.add(tooth);
-      }
-      gear.add(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.3, 8).rotateX(Math.PI / 2), M.dark));
-      gear.userData.dir = sx;
-      this.machine.add(gear);
-      this.gears.push(gear);
-    }
-
-    // --- collector hood + pipe on the right
-    this.hood = new THREE.Group();
-    this.hood.position.set(L.hood.x, L.hood.y, 0.1);
-    this.hood.add(new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.38, 0.8, 12).rotateZ(Math.PI / 2), M.trim));
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.07, 6, 14).rotateY(Math.PI / 2), M.glow);
-    ring.position.x = -0.42;
-    this.hood.add(ring);
-    this.hoodRing = ring;
-    this.machine.add(this.hood);
-    this._box(0.42, 7.4, 0.42, M.trim, 3.78, 5.2, 0.1);
-    this.pulses = [];
-    for (let i = 0; i < 6; i++) {
-      const p = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), M.glow);
-      p.position.set(3.78, 1.6, 0.34);
-      p.userData.k = i / 6;
-      this.machine.add(p);
-      this.pulses.push(p);
-    }
-    // money tank top-right
-    this._box(0.9, 0.9, 0.9, M.gold, 3.78, 9.1, 0.1);
-
-    // --- grade-specific features
-    this.features = { 2: new THREE.Group(), 3: new THREE.Group(), 4: new THREE.Group(), 5: new THREE.Group(), 6: new THREE.Group() };
-    for (const k of Object.keys(this.features)) { this.features[k].visible = false; this.machine.add(this.features[k]); }
-    // g2 copper pipes along both inner sides + lights
-    for (const sx of [-1, 1]) {
-      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 9, 8), M.copper);
-      pipe.position.set(sx * 3.02, 5.8, 0.55);
-      this.features[2].add(pipe);
-      for (const y of [2.2, 5.0, 8.0]) {
-        const j = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.2, 8), M.trim);
-        j.position.set(sx * 3.02, y, 0.55);
-        this.features[2].add(j);
-      }
-    }
-    // g3 smokestack
-    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 2.0, 10), M.dark);
-    stack.position.set(-2.5, 13.2, -0.1);
-    const stackTop = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.22, 10), M.accent);
-    stackTop.position.set(-2.5, 14.25, -0.1);
-    this.features[3].add(stack, stackTop);
-    // g4 gold trim + spotlights
-    for (const sx of [-1, 1]) {
-      const trim = new THREE.Mesh(new THREE.BoxGeometry(0.1, 12.2, 0.1), M.gold);
-      trim.position.set(sx * 3.58, 5.8, 0.72);
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.5), M.gold);
-      lamp.position.set(sx * 3.1, 12.65, 0.2);
-      const cone = new THREE.Mesh(
-        new THREE.ConeGeometry(1.15, 6, 14, 1, true),
-        new THREE.MeshBasicMaterial({ color: 0xffe8a0, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })
-      );
-      cone.position.set(sx * 2.2, 10, 0.9);
-      cone.rotation.z = sx * 0.4;
-      cone.userData.sx = sx;
-      this.features[4].add(trim, lamp, cone);
-      (this.spots = this.spots || []).push(cone);
-    }
-    // g5 energy beams
-    this.beams = [];
-    for (const sx of [-1, 1]) {
-      const beam = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.9, 11.2),
-        new THREE.MeshBasicMaterial({ color: 0x66fff0, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false })
-      );
-      beam.position.set(sx * 2.7, 5.8, -0.35);
-      this.features[5].add(beam);
-      this.beams.push(beam);
-    }
-    // g6 crown
-    this.crown = new THREE.Group();
-    this.crown.position.set(0, 13.0, 0.2);
-    this.crown.add(new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.5, 0.6), M.gold));
-    for (let i = -2; i <= 2; i++) {
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.28, i % 2 === 0 ? 0.95 : 0.65, 4), M.gold);
-      spike.position.set(i * 0.55, 0.65, 0);
-      spike.rotation.y = Math.PI / 4;
-      this.crown.add(spike);
-      const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.1), i % 2 ? M.cyan : new THREE.MeshBasicMaterial({ color: 0xff6ad5 }));
-      gem.position.set(i * 0.55, 0.0, 0.32);
-      this.crown.add(gem);
-    }
-    this.features[6].add(this.crown);
-
-    // --- coins: thin cylinders (axis = Z, facing the camera). Radius / thickness come from COIN_TYPES in layout.js
-    //     and are exactly what the Rapier cylinder colliders use.
     const pm = new THREE.PMREMGenerator(this.renderer);
     this.envMap = pm.fromScene(new RoomEnvironment(), 0.04).texture;
     pm.dispose();
-    this.objMeshes = COIN_TYPES.map((c) => {
-      const geo = new THREE.CylinderGeometry(c.radius, c.radius, c.thickness, c.segments, 1);
-      geo.rotateX(Math.PI / 2); // cylinder axis Y -> Z (matches the collider's local rotation)
-      const faces = this._coinFaceTextures(c);
-      const side = new THREE.MeshStandardMaterial({ color: c.edge, metalness: c.metal, roughness: c.rough + 0.1, envMap: this.envMap, envMapIntensity: 0.9 });
-      const face = new THREE.MeshStandardMaterial({ map: faces.map, bumpMap: faces.bump, bumpScale: 2.2, metalness: c.metal, roughness: c.rough, envMap: this.envMap, envMapIntensity: 1.0 });
-      if (c.key === 'gem') { face.emissive = new THREE.Color(0x0a5560); face.emissiveIntensity = 0.7; }
-      const im = new THREE.InstancedMesh(geo, [side, face, face], this.maxBodies); // groups: edge, front cap, back cap
-      im.frustumCulled = false;
-      im.count = 0;
-      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      this.scene.add(im);
-      return im;
-    });
-    this._typeCount = [0, 0, 0, 0];
-    this.refreshTextures();
+
+    this._lights();
+    this._textures();
+    this._background();
+    this._coins();
+    this.particles = new Particles(this.scene, opts.particles || 200);
+    this.palCur = { edge: new THREE.Color(0x06080c), mid: new THREE.Color(0xcdd1d8), tint: new THREE.Color(0xffffff) };
+    this.palTgt = { edge: new THREE.Color(0x06080c), mid: new THREE.Color(0xcdd1d8), tint: new THREE.Color(0xffffff) };
   }
 
   _lights() {
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x4a5078, 1.55));
-    const key = new THREE.DirectionalLight(0xfff2d8, 2.2);
-    key.position.set(-6, 14, 18);
-    this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0x8ab4ff, 0.6);
-    fill.position.set(8, 4, 10);
-    this.scene.add(fill);
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xaab2cc, 1.25));
+    const d = new THREE.DirectionalLight(0xffffff, 1.7);
+    d.position.set(-3.5, 15, 18);
+    d.target.position.set(0, 7, 0);
+    d.castShadow = true;
+    d.shadow.mapSize.set(1024, 1024);
+    const sc = d.shadow.camera;
+    sc.left = -7; sc.right = 7; sc.top = 11; sc.bottom = -10; sc.near = 1; sc.far = 50;
+    d.shadow.bias = -0.0005;
+    d.shadow.normalBias = 0.025;
+    d.shadow.radius = 2;
+    this.scene.add(d, d.target);
+    this.sun = d;
   }
 
-  refreshTextures() {
-    const sign = this._signTexture('PIXEL CASH', 256, 40, `22px ${FONT_PIXEL}`, '#ffe066', '#1b1f36');
-    if (this.signMat.map) this.signMat.map.dispose();
-    this.signMat.map = pixelTexture(sign);
-    this.signMat.needsUpdate = true;
-    this.updateGradePlate();
-  }
-
-  updateGradePlate() {
-    const c = this._signTexture(`GRADE ${this.grade}`, 192, 40, `bold 18px ${FONT_PIXEL}`, '#ffe066', '#1b1f36');
-    const mat = this.baseSign.material;
-    if (mat.map) mat.map.dispose();
-    mat.map = pixelTexture(c, null, true);
-    mat.color.set(0xffffff);
-    mat.needsUpdate = true;
-  }
-
-  setGrade(g, animate) {
-    const prev = this.grade;
-    this.grade = g;
-    const def = GRADES[g - 1];
-    this.palTarget.body.set(def.body);
-    this.palTarget.accent.set(def.accent);
-    this.palTarget.trim.set(def.trim);
-    this.palTarget.light.set(def.light);
-    if (!animate) for (const k of Object.keys(this.pal)) this.pal[k].copy(this.palTarget[k]);
-    for (const k of Object.keys(this.features)) {
-      const on = g >= Number(k);
-      const grp = this.features[k];
-      if (on && !grp.visible && animate) { grp.userData.pop = 0; }
-      grp.visible = on;
-      if (!animate) grp.scale.setScalar(1);
+  setQuality(q) {
+    const on = !!q.shadows;
+    this.sun.castShadow = on;
+    const size = q.shadowMap || 1024;
+    if (this.sun.shadow.mapSize.x !== size) {
+      this.sun.shadow.mapSize.set(size, size);
+      if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
     }
-    this.updateGradePlate();
-    if (animate && g !== prev) {
-      this.shake = 1;
-      this.pop = 1;
-      this.particles.emit(0, 8, 1.2, 70, { color: [0xffe066, 0xff6ad5, 0x66f7ff, 0xffffff, 0x7dff8a], speed: 7, life: 1.3, gravity: 6, size: 0.2, up: 1.4 });
-    }
+    for (const m of this.objMeshes) m.castShadow = on;
   }
 
-  setNozzles(n, animate = true) {
-    this.nozzleCount = n;
-    this.nozzles.forEach((g, i) => {
-      g.userData.target = i < n ? 1 : 0;
-      if (!animate) { g.userData.scale = g.userData.target; g.scale.setScalar(Math.max(0.0001, g.userData.scale)); }
-    });
+  _textures() {
+    const T = (t) => t;
+    this.tex = {
+      front: T(slabFrontTex()), top: T(slabTopTex()), side: T(slabSideTex()), wall: T(wallTex()),
+      belt: T(beltTopTex()), hazard: T(hazardTex()), chevron: T(chevronTex()),
+    };
+    const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.82, metalness: 0.0, ...o });
+    this.mats = {
+      front: std({ map: this.tex.front }), top: std({ map: this.tex.top }), side: std({ map: this.tex.side }),
+      wall: std({ map: this.tex.wall }),
+      beltTop: std({ map: this.tex.belt, roughness: 0.9 }), beltBody: std({ color: 0x2a3146, roughness: 0.7 }),
+      dark: std({ color: 0x1c2030, roughness: 0.6 }),
+      metal: std({ color: 0xaab3c6, roughness: 0.35, metalness: 0.7, envMap: this.envMap }),
+      metalDark: std({ color: 0x6b7388, roughness: 0.4, metalness: 0.7, envMap: this.envMap }),
+      hazard: std({ map: this.tex.hazard, roughness: 0.6 }),
+      green: std({ color: 0x36d65a, roughness: 0.45, metalness: 0.1, emissive: 0x0b3a14, emissiveIntensity: 0.6 }),
+      greenDark: std({ color: 0x1f9a3c, roughness: 0.5 }),
+      red: std({ color: 0xe23b3b, roughness: 0.45, emissive: 0x4a0808, emissiveIntensity: 0.5 }),
+      orange: std({ map: this.tex.chevron, roughness: 0.6 }),
+      glass: new THREE.MeshBasicMaterial({ color: 0x7dffb0, transparent: true, opacity: 0.28, depthWrite: false }),
+      wind: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }),
+    };
+    this.tintMats = [this.mats.front, this.mats.top, this.mats.side, this.mats.wall];
   }
 
-  nozzleX(i) {
-    return L.nozzleXs[i];
+  _background() {
+    this.bgU = { cEdge: { value: new THREE.Color(0x06080c) }, cMid: { value: new THREE.Color(0xcdd1d8) }, lowRes: { value: 0 } };
+    const bg = new THREE.Mesh(
+      new THREE.PlaneGeometry(60, 60),
+      new THREE.ShaderMaterial({ vertexShader: BG_VERT, fragmentShader: BG_FRAG, uniforms: this.bgU, depthWrite: true })
+    );
+    bg.position.set(0, 8, -SLAB_Z - 0.3);
+    this.scene.add(bg);
+    // transparent shadow catcher in front of the gradient
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShadowMaterial({ opacity: 0.2 }));
+    sh.position.set(0, 8, -SLAB_Z - 0.29);
+    sh.receiveShadow = true;
+    this.scene.add(sh);
   }
 
-  // embossed face artwork (colour map + matching bump map) for a coin type
+  // ---- coins: thin cylinders (axis = local Y, same as the Rapier collider) ----
   _coinFaceTextures(c) {
     const N = 128;
     const mk = (bump) => {
@@ -499,31 +285,23 @@ export class World {
       const g = cv.getContext('2d');
       const hex = (n) => '#' + n.toString(16).padStart(6, '0');
       const mid = N / 2;
-      const ink = bump ? '#ffffff' : '#00000033';
       g.fillStyle = bump ? '#808080' : hex(c.faceColor);
       g.fillRect(0, 0, N, N);
-      // raised rim + inner groove
-      g.lineWidth = N * 0.07;
+      g.lineWidth = N * 0.08;
       g.strokeStyle = bump ? '#ffffff' : hex(c.edge);
-      g.beginPath(); g.arc(mid, mid, N * 0.43, 0, Math.PI * 2); g.stroke();
-      g.lineWidth = N * 0.018;
+      g.beginPath(); g.arc(mid, mid, N * 0.42, 0, Math.PI * 2); g.stroke();
+      g.lineWidth = N * 0.02;
       g.strokeStyle = bump ? '#303030' : '#00000040';
-      g.beginPath(); g.arc(mid, mid, N * 0.34, 0, Math.PI * 2); g.stroke();
-      // symbol
+      g.beginPath(); g.arc(mid, mid, N * 0.33, 0, Math.PI * 2); g.stroke();
       g.fillStyle = bump ? '#ffffff' : hex(c.edge);
-      g.strokeStyle = g.fillStyle;
       if (c.face === 'star') {
         g.beginPath();
-        for (let i = 0; i < 10; i++) { const r = i % 2 ? N * 0.1 : N * 0.24, a = -Math.PI / 2 + i * Math.PI / 5; g.lineTo(mid + Math.cos(a) * r, mid + Math.sin(a) * r); }
+        for (let i = 0; i < 10; i++) { const r = i % 2 ? N * 0.1 : N * 0.23, a = -Math.PI / 2 + (i * Math.PI) / 5; g.lineTo(mid + Math.cos(a) * r, mid + Math.sin(a) * r); }
         g.closePath(); g.fill();
-      } else if (c.face === 'crown') {
-        g.beginPath();
-        g.moveTo(mid - N * 0.22, mid + N * 0.14); g.lineTo(mid - N * 0.22, mid - N * 0.12); g.lineTo(mid - N * 0.1, mid); g.lineTo(mid, mid - N * 0.18);
-        g.lineTo(mid + N * 0.1, mid); g.lineTo(mid + N * 0.22, mid - N * 0.12); g.lineTo(mid + N * 0.22, mid + N * 0.14); g.closePath(); g.fill();
       } else if (c.face === 'gem') {
-        g.beginPath(); g.moveTo(mid, mid - N * 0.22); g.lineTo(mid + N * 0.2, mid); g.lineTo(mid, mid + N * 0.22); g.lineTo(mid - N * 0.2, mid); g.closePath(); g.fill();
+        g.beginPath(); g.moveTo(mid, mid - N * 0.22); g.lineTo(mid + N * 0.19, mid); g.lineTo(mid, mid + N * 0.22); g.lineTo(mid - N * 0.19, mid); g.closePath(); g.fill();
       } else {
-        g.font = `bold ${N * 0.42}px "Press Start 2P", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.font = `bold ${N * 0.4}px ${FONT_PIXEL}`; g.textAlign = 'center'; g.textBaseline = 'middle';
         g.fillText('$', mid, mid + N * 0.02);
       }
       const t = new THREE.CanvasTexture(cv);
@@ -534,28 +312,256 @@ export class World {
     return { map: mk(false), bump: mk(true) };
   }
 
-  // orthographic frustum that keeps the whole playfield visible and leaves room under the HUD overlay
-  fit(cssW, cssH, aspect, hudFrac = 0) {
+  _coins() {
+    this.objMeshes = COIN_TYPES.map((c) => {
+      const geo = new THREE.CylinderGeometry(c.radius, c.radius, c.thickness, c.segments, 1); // axis Y
+      const faces = this._coinFaceTextures(c);
+      const side = new THREE.MeshStandardMaterial({ color: c.edge, metalness: c.metal, roughness: c.rough + 0.1, envMap: this.envMap, envMapIntensity: 1.0 });
+      const face = new THREE.MeshStandardMaterial({ map: faces.map, bumpMap: faces.bump, bumpScale: 2.0, metalness: c.metal, roughness: c.rough, envMap: this.envMap, envMapIntensity: 1.05 });
+      if (c.key === 'rare') { face.emissive = new THREE.Color(0x0a6a78); face.emissiveIntensity = 0.8; }
+      const im = new THREE.InstancedMesh(geo, [side, face, face], this.maxBodies);
+      im.frustumCulled = false;
+      im.count = 0;
+      im.castShadow = true;
+      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      im.setColorAt(0, new THREE.Color(1, 1, 1));
+      im.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      this.scene.add(im);
+      return im;
+    });
+    this._white = new THREE.Color(1, 1, 1);
+    this._gold = new THREE.Color(1.5, 1.2, 0.55);
+  }
+
+  // ---------- stage building ----------
+  _box(w, h, d, mat, x, y, z, parent, shadow = true) {
+    const geo = new THREE.BoxGeometry(w, h, d);
+    this._geos.push(geo);
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.castShadow = shadow;
+    m.receiveShadow = true;
+    parent.add(m);
+    return m;
+  }
+
+  _cyl(r, h, seg, mat, parent, rotZ = 0, rotX = 0) {
+    const geo = new THREE.CylinderGeometry(r, r, h, seg);
+    if (rotZ) geo.rotateZ(rotZ);
+    if (rotX) geo.rotateX(rotX);
+    this._geos.push(geo);
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    parent.add(m);
+    return m;
+  }
+
+  setStage(def, animate) {
+    if (this.stageGroup) {
+      this.scene.remove(this.stageGroup);
+      for (const g of this._geos) g.dispose();
+      this._geos = [];
+    }
+    const g = new THREE.Group();
+    this.stageGroup = g;
+    this.scene.add(g);
+    const V = (this.vis = { pistons: [], belts: [], fans: [], magnets: [], launchers: [], gates: [], rollers: [], streaks: [] });
+    this.def = def;
+    const pal = def.palette;
+    this.palTgt.edge.set(pal.edge); this.palTgt.mid.set(pal.mid); this.palTgt.tint.set(pal.tint);
+    if (!animate) { this.palCur.edge.copy(this.palTgt.edge); this.palCur.mid.copy(this.palTgt.mid); this.palCur.tint.copy(this.palTgt.tint); this._applyPalette(); }
+
+    const M = this.mats;
+    // side walls (thick light columns, outer edge of the screen)
+    for (const s of [-1, 1]) {
+      const wm = [M.side, M.side, M.top, M.side, M.wall, M.side];
+      this._box(WALL_W, 18.4, SLAB_Z * 2 + 0.16, wm, s * (IN_HALF + WALL_W / 2), 7.6, 0.08, g);
+    }
+    // platforms, columns and belts
+    for (const b of def.blocks) {
+      const w = b.x1 - b.x0, h = b.y1 - b.y0, cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+      if (b.kind === 'belt') {
+        const beltTop = M.beltTop.clone();
+        beltTop.map = this.tex.belt.clone();
+        beltTop.map.needsUpdate = true;
+        beltTop.map.repeat.set(w / 0.45, 1);
+        const mats = [M.beltBody, M.beltBody, beltTop, M.beltBody, M.beltBody, M.beltBody];
+        this._box(w, h, SLAB_Z * 2, mats, cx, cy, 0, g);
+        // end rollers
+        for (const ex of [b.x0 + 0.05, b.x1 - 0.05]) {
+          const r = this._cyl(h * 0.38, SLAB_Z * 2 + 0.02, 14, M.metalDark, g, 0, Math.PI / 2);
+          r.position.set(ex, cy, 0);
+        }
+        // light cladding under the belt so it reads as a machine part of the same family
+        this._box(w, 0.12, SLAB_Z * 2, [M.side, M.side, M.top, M.side, M.front, M.side], cx, b.y0 + 0.06, 0, g);
+        V.belts.push({ map: beltTop.map, dir: b.side === 'L' ? 1 : -1 });
+      } else {
+        const mats = [M.side, M.side, M.top, M.side, M.front, M.side];
+        this._box(w, h, SLAB_Z * 2, mats, cx, cy, 0, g);
+      }
+    }
+    for (const p of def.plates) {
+      const m = this._box(p.halfLen * 2, p.thick, SLAB_Z * 2, [M.side, M.side, M.top, M.side, M.front, M.side], p.cx, p.cy, 0, g);
+      m.rotation.z = p.ang;
+    }
+
+    // dispenser pipe
+    this.pipe = new THREE.Group();
+    this.pipe.position.set(def.pipe.x, def.pipe.y, 0);
+    const body = this._cyl(0.5, 3.2, 20, M.green, this.pipe);
+    body.position.y = 1.6 + 0.16;
+    const lip = this._cyl(0.68, 0.34, 20, M.green, this.pipe);
+    lip.position.y = 0.17;
+    const ring = this._cyl(0.7, 0.07, 20, M.greenDark, this.pipe);
+    ring.position.y = 0.0;
+    g.add(this.pipe);
+
+    // grinder / collector in the pit
+    const pit = def.pit;
+    const pw = pit.x1 - pit.x0;
+    this._box(pw, 0.9, 0.5, M.dark, (pit.x0 + pit.x1) / 2, 0.45, -0.25, g, false);
+    const n = Math.max(3, Math.round(pw / 0.5));
+    for (let i = 0; i < n; i++) {
+      const x = pit.x0 + (pw * (i + 0.5)) / n;
+      const roller = new THREE.Group();
+      roller.position.set(x, 0.66, 0.0);
+      const cyl = this._cyl(0.2, 0.9, 12, i % 2 ? M.dark : M.green, roller, 0, Math.PI / 2);
+      cyl.castShadow = false;
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2;
+        const sp = new THREE.Mesh(this._coneGeo(), M.metal);
+        sp.position.set(Math.cos(a) * 0.23, Math.sin(a) * 0.23, 0);
+        sp.rotation.z = a - Math.PI / 2;
+        roller.add(sp);
+      }
+      g.add(roller);
+      V.rollers.push({ obj: roller, dir: i % 2 ? -1 : 1 });
+    }
+    // light rim in front of the grinder
+    this._box(pw, 0.16, 0.12, M.metalDark, (pit.x0 + pit.x1) / 2, 0.08, 0.5, g, false);
+
+    // pistons
+    for (const pd of def.pistons) {
+      const grp = new THREE.Group();
+      g.add(grp);
+      const wallSide = pd.dir > 0 ? -1 : 1;
+      // hazard decal on the wall face + dark port
+      const decal = this._box(0.5, 0.78, 0.06, M.hazard, wallSide * (IN_HALF + 0.3), pd.y, SLAB_Z + 0.1, grp);
+      decal.castShadow = false;
+      const port = this._box(0.05, HEAD.hy * 2 + 0.06, HEAD.hz * 2 + 0.04, M.dark, wallSide * IN_HALF, pd.y, 0, grp, false);
+      const rod = this._box(1, HEAD.hy * 2 - 0.1, HEAD.hz * 2 - 0.16, M.metalDark, 0, pd.y, 0, grp);
+      const head = this._box(HEAD.hw * 2, HEAD.hy * 2, HEAD.hz * 2, M.metal, 0, pd.y, 0, grp);
+      const stripe = this._box(HEAD.hw * 2 + 0.01, HEAD.hy * 2 - 0.14, 0.1, M.hazard, 0, pd.y, HEAD.hz - 0.02, grp);
+      stripe.castShadow = false;
+      V.pistons.push({ def: pd, rod, head, stripe, port });
+    }
+
+    // fans (air blowers): red disc on the wall with a spinning propeller + wind streaks
+    for (const fd of def.fans) {
+      const fg = new THREE.Group();
+      fg.position.set(-IN_HALF - 0.1, fd.y, SLAB_Z + 0.12);
+      const disc = this._cyl(0.55, 0.14, 20, M.red, fg, 0, Math.PI / 2);
+      const prop = new THREE.Group();
+      for (let k = 0; k < 3; k++) {
+        const blade = this._box(0.18, 0.62, 0.05, M.metal, 0, 0, 0.1, prop, false);
+        blade.position.set(0, 0, 0.1);
+        blade.rotation.z = (k / 3) * Math.PI * 2;
+        blade.geometry.translate(0, 0.28, 0);
+      }
+      fg.add(prop);
+      g.add(fg);
+      const streaks = [];
+      for (let k = 0; k < 9; k++) {
+        const s = this._box(0.7, 0.03, 0.03, M.wind, 0, 0, 0, g, false);
+        s.userData = { off: k / 9, row: (k * 0.6180339) % 1 };
+        streaks.push(s);
+      }
+      V.fans.push({ def: fd, prop, streaks });
+    }
+    // magnets: red horseshoe on the column front
+    for (const md of def.magnets) {
+      const mg = new THREE.Group();
+      mg.position.set(-0.05, md.y, SLAB_Z + 0.12);
+      this._box(0.5, 0.14, 0.2, M.red, 0, 0.22, 0, mg);
+      this._box(0.14, 0.5, 0.2, M.red, -0.18, 0, 0, mg);
+      this._box(0.14, 0.5, 0.2, M.red, 0.18, 0, 0, mg);
+      this._box(0.14, 0.14, 0.2, M.metal, -0.18, -0.3, 0, mg);
+      this._box(0.14, 0.14, 0.2, M.metal, 0.18, -0.3, 0, mg);
+      const glow = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.46, 24), new THREE.MeshBasicMaterial({ color: 0xff6a6a, transparent: true, opacity: 0.0, depthWrite: false }));
+      glow.position.z = 0.15;
+      mg.add(glow);
+      g.add(mg);
+      V.magnets.push({ def: md, glow, group: mg });
+    }
+    // launcher pads: chevron inlay on the platform lip
+    for (const ld of def.launchers) {
+      const padGeo = new THREE.PlaneGeometry(ld.x1 - ld.x0, SLAB_Z * 1.5);
+      this._geos.push(padGeo);
+      const pm = this.mats.orange.clone();
+      pm.map = this.tex.chevron.clone();
+      pm.map.needsUpdate = true;
+      pm.map.wrapS = pm.map.wrapT = THREE.RepeatWrapping;
+      pm.map.repeat.set((ld.x1 - ld.x0) / 0.3, 1);
+      const pad = new THREE.Mesh(padGeo, pm);
+      pad.rotation.x = -Math.PI / 2;
+      pad.position.set((ld.x0 + ld.x1) / 2, ld.top + 0.004, 0);
+      pad.receiveShadow = true;
+      g.add(pad);
+      const spring = this._box(0.3, 0.2, 0.16, M.metal, (ld.x0 + ld.x1) / 2, ld.top - 0.35, SLAB_Z + 0.02, g);
+      V.launchers.push({ def: ld, pad, mat: pm, spring });
+    }
+    // multiplier gates: two posts + translucent field with "x2"
+    for (const gd of def.gates) {
+      const gg = new THREE.Group();
+      const w = gd.x1 - gd.x0, h = gd.y1 - gd.y0;
+      this._box(0.1, h + 0.2, 0.14, M.greenDark, gd.x0, (gd.y0 + gd.y1) / 2, 0, gg);
+      this._box(0.1, h + 0.2, 0.14, M.greenDark, gd.x1, (gd.y0 + gd.y1) / 2, 0, gg);
+      const field = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M.glass.clone());
+      this._geos.push(field.geometry);
+      field.position.set((gd.x0 + gd.x1) / 2, (gd.y0 + gd.y1) / 2, 0.4);
+      gg.add(field);
+      const lab = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.31), new THREE.MeshBasicMaterial({ map: labelTex('x2', '#1f9a3c', '#ffffff') }));
+      this._geos.push(lab.geometry);
+      lab.position.set((gd.x0 + gd.x1) / 2, gd.y1 + 0.3, 0.45);
+      gg.add(lab);
+      g.add(gg);
+      V.gates.push({ def: gd, field });
+    }
+    this.pulse = 0;
+  }
+
+  _coneGeo() {
+    if (!this._cone) this._cone = new THREE.ConeGeometry(0.07, 0.2, 5);
+    return this._cone;
+  }
+
+  _applyPalette() {
+    this.bgU.cEdge.value.copy(this.palCur.edge);
+    this.bgU.cMid.value.copy(this.palCur.mid);
+    for (const m of this.tintMats) m.color.copy(this.palCur.tint);
+  }
+
+  // ---------- camera ----------
+  // orthographic frustum: whole machine (7.4 x 15.2) visible; slight downward pitch so platform tops and coin faces show depth
+  fit(cssW, cssH, aspect) {
     const cam = this.camera;
-    hudFrac = Math.max(0, Math.min(0.45, hudFrac));
-    const needH = 15.4; // machine height incl. crown/smokestack + base (world units)
-    const needW = 9.8; // incl. side pipes / piston housings
-    let H = needH / (1 - hudFrac);
-    let W = H * aspect;
-    if (W < needW) { W = needW; H = W / aspect; }
+    const needW = VIEW_HALF_W * 2 + 0.1;
+    const needH = VIEW_TOP + 0.5;
+    let W = needW, H = needW / aspect;
+    if (H < needH) { H = needH; W = H * aspect; }
     cam.left = -W / 2; cam.right = W / 2; cam.top = H / 2; cam.bottom = -H / 2;
     cam.updateProjectionMatrix();
-    this._cy = 6.1 + (H * hudFrac) / 2; // aiming higher pushes the machine below the HUD
+    this._cy = VIEW_TOP / 2 + 0.1;
     this._placeCam(0);
   }
 
   _placeCam(shakeAmt) {
-    // slightly angled front view: a little yaw/pitch lets the side walls and coin thickness read as 3D
-    const yaw = 0.2, pitch = 0.14, d = 60;
-    const cy = this._cy;
+    const pitch = 0.17, d = 60;
     const sx = (Math.random() - 0.5) * shakeAmt;
     const sy = (Math.random() - 0.5) * shakeAmt;
-    this.camera.position.set(Math.sin(yaw) * Math.cos(pitch) * d + sx, cy + Math.sin(pitch) * d + sy, Math.cos(yaw) * Math.cos(pitch) * d);
+    const cy = this._cy;
+    this.camera.position.set(sx, cy + Math.sin(pitch) * d + sy, Math.cos(pitch) * d);
     this.camera.lookAt(sx, cy + sy, 0);
     this.camera.updateMatrixWorld(true);
   }
@@ -565,7 +571,6 @@ export class World {
     return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h };
   }
 
-  // screen (NDC) -> point on the z = 0 play plane (works for orthographic and perspective cameras)
   unprojectToPlane(nx, ny) {
     const a = new THREE.Vector3(nx, ny, -1).unproject(this.camera);
     const b = new THREE.Vector3(nx, ny, 1).unproject(this.camera);
@@ -574,11 +579,14 @@ export class World {
     return { x: a.x + dir.x * t, y: a.y + dir.y * t };
   }
 
-  // write instance matrices (full 3D rotation) for every coin in play
+  // ---------- per-frame ----------
   syncObjects(physics) {
     const counts = new Array(this.objMeshes.length).fill(0);
     const arrs = this.objMeshes.map((m) => m.instanceMatrix.array);
-    const put = (arr, i, x, y, z, q, sc) => {
+    const cols = this.objMeshes.map((m) => m.instanceColor.array);
+    const put = (t, x, y, z, q, sc, gold) => {
+      const i = counts[t]++;
+      const arr = arrs[t];
       const o = i * 16;
       const x2 = q.x + q.x, y2 = q.y + q.y, z2 = q.z + q.z;
       const xx = q.x * x2, xy = q.x * y2, xz = q.x * z2, yy = q.y * y2, yz = q.y * z2, zz = q.z * z2, wx = q.w * x2, wy = q.w * y2, wz = q.w * z2;
@@ -586,122 +594,97 @@ export class World {
       arr[o + 4] = (xy - wz) * sc; arr[o + 5] = (1 - (xx + zz)) * sc; arr[o + 6] = (yz + wx) * sc; arr[o + 7] = 0;
       arr[o + 8] = (xz + wy) * sc; arr[o + 9] = (yz - wx) * sc; arr[o + 10] = (1 - (xx + yy)) * sc; arr[o + 11] = 0;
       arr[o + 12] = x; arr[o + 13] = y; arr[o + 14] = z; arr[o + 15] = 1;
+      const c = gold ? this._gold : this._white;
+      cols[t][i * 3] = c.r; cols[t][i * 3 + 1] = c.g; cols[t][i * 3 + 2] = c.b;
     };
     for (const idx of physics.active) {
       const s = physics.slots[idx];
       const p = s.body.translation();
-      put(arrs[s.type], counts[s.type]++, p.x, p.y, p.z, s.body.rotation(), 1);
+      put(s.type, p.x, p.y, p.z, s.body.rotation(), 1, s.mult > 1);
     }
-    // coins being collected: arc into the hood, spinning and shrinking
+    // coins being swallowed by the grinder: sink and shrink
     for (const idx of physics.sucking) {
       const s = physics.slots[idx];
       const k = Math.min(1, s.st);
-      const e = k * k * (3 - 2 * k);
-      const x = s.sx + (L.hood.x - s.sx) * e;
-      const y = s.sy + (L.hood.y - s.sy) * e + Math.sin(k * Math.PI) * 0.5;
-      const half = k * 9;
-      const sz = Math.sin(half), cz = Math.cos(half), q0 = s.q;
-      const q = { x: cz * q0.x + sz * q0.y * -1, y: 0, z: 0, w: 0 };
-      // q = qz(half*2) * q0
-      const a = half * 2, qs = Math.sin(a / 2), qc = Math.cos(a / 2);
-      q.w = qc * q0.w - qs * q0.z;
-      q.x = qc * q0.x - qs * q0.y;
-      q.y = qc * q0.y + qs * q0.x;
-      q.z = qc * q0.z + qs * q0.w;
-      const t = s.type;
-      put(arrs[t], counts[t]++, x, y, (s.sz || 0) * (1 - e) + 0.12 * e, q, 1 - 0.55 * e);
+      put(s.type, s.sx, s.sy - 0.45 * k, s.sz, s.q, 1 - 0.7 * k, s.mult > 1);
     }
-    this.objMeshes.forEach((m, i) => { m.count = counts[i]; m.instanceMatrix.needsUpdate = true; });
-  }
-
-  // animate the anti-jam pistons from the pusher state
-  updatePistons(pusher) {
-    if (!pusher) return;
-    this.pistons.forEach((v, i) => {
-      const p = pusher.pistons[i];
-      const w = v.w;
-      const front = w * (PISTON_PLATE.restFront - p.ext);
-      const headX = front + w * PISTON_PLATE.halfX;
-      v.head.position.set(headX, v.def.y, 0);
-      const wallX = w * 3.25;
-      const len = Math.max(0.01, Math.abs(wallX - headX));
-      v.rod.scale.x = len;
-      v.rod.position.set((wallX + headX) / 2, v.def.y, 0);
-      const active = p.phase !== 'idle';
-      v.lamp.material.color.setHex(p.phase === 'wait' ? 0xffe066 : active ? 0xff9e1a : p.cool > 0 ? 0x4a3a22 : 0x4cff7a);
+    this.objMeshes.forEach((m, i) => {
+      m.count = counts[i];
+      m.instanceMatrix.needsUpdate = true;
+      m.instanceColor.needsUpdate = true;
     });
   }
 
-  update(dt, physics, state, pusher) {
+  update(dt, machines) {
     this.t += dt;
-    this.updatePistons(pusher);
-    // palette easing
-    const k = 1 - Math.pow(0.0008, dt);
-    for (const key of Object.keys(this.pal)) this.pal[key].lerp(this.palTarget[key], k);
-    this.m.body.color.copy(this.pal.body);
-    this.m.panel.color.copy(this.pal.body).multiplyScalar(0.5);
-    this.m.accent.color.copy(this.pal.accent);
-    this.m.trim.color.copy(this.pal.trim);
-    // mechanical parts
-    this.paddle.rotation.z = physics.paddleAngle;
-    this.beltTex.offset.x -= dt * 0.55 * (0.4 + this.pulse);
-    for (const g of this.gears) g.rotation.z += dt * 1.2 * g.userData.dir;
-    this.lamps.forEach((l, i) => {
-      const on = Math.sin(this.t * 4 + i * 0.9) > (this.grade >= 2 ? -0.2 : 0.6);
-      l.material.color.setHex(on ? [0xff5470, 0xffe066, 0x66f7ff][i % 3] : 0x40283a);
-    });
-    // nozzles pop in
-    for (const g of this.nozzles) {
-      const u = g.userData;
-      u.scale += (u.target - u.scale) * Math.min(1, dt * 9);
-      g.scale.setScalar(Math.max(0.0001, u.scale));
-      u.glow.material.color.setHex(0xfff2a0);
+    const t = this.t;
+    // palette fade
+    const k = Math.min(1, dt * 2.2);
+    this.palCur.edge.lerp(this.palTgt.edge, k);
+    this.palCur.mid.lerp(this.palTgt.mid, k);
+    this.palCur.tint.lerp(this.palTgt.tint, k);
+    this._applyPalette();
+    if (this.pulse > 0) this.pulse = Math.max(0, this.pulse - dt * 4);
+    if (this.pipeKick > 0) this.pipeKick = Math.max(0, this.pipeKick - dt * 6);
+    if (this.pipe) this.pipe.scale.set(1 + 0.06 * this.pipeKick, 1 - 0.08 * this.pipeKick, 1 + 0.06 * this.pipeKick);
+
+    const V = this.vis;
+    if (machines) {
+      // pistons
+      V.pistons.forEach((v, i) => {
+        const p = machines.pistons[i];
+        if (!p) return;
+        const d = v.def;
+        const wallX = d.wall;
+        const front = wallX + d.dir * p.ext;
+        const headX = front - d.dir * HEAD.hw;
+        v.head.position.x = headX;
+        v.stripe.position.x = headX;
+        const len = Math.max(0.01, Math.abs(headX - HEAD.hw * 0 - wallX) - HEAD.hw);
+        v.rod.scale.x = Math.max(0.01, len + 0.4);
+        v.rod.position.x = wallX + d.dir * (len / 2) - d.dir * 0.2;
+      });
+      V.belts.forEach((v, i) => {
+        const b = machines.belts[i];
+        if (b) v.map.offset.x -= v.dir * b.speed * dt * 0.6;
+      });
+      V.fans.forEach((v, i) => {
+        const f = machines.fans[i];
+        if (!f) return;
+        v.prop.rotation.z -= dt * (f.on ? 14 : 1.2);
+        const d = v.def;
+        for (const s of v.streaks) {
+          s.visible = f.on;
+          if (!f.on) continue;
+          const u = (s.userData.off + t * 0.75) % 1;
+          s.position.set(d.x + 0.45 + u * (d.x1 - d.x - 0.4), d.y0 + 0.2 + s.userData.row * (d.y1 - d.y0 - 0.3), 0.3);
+          s.scale.x = 0.6 + 0.8 * Math.sin(u * Math.PI);
+          s.material.opacity = 0.55;
+        }
+      });
+      V.magnets.forEach((v, i) => {
+        const m = machines.magnets[i];
+        const on = m && m.on;
+        v.glow.material.opacity = on ? 0.25 + 0.25 * Math.sin(t * 5) : 0;
+        v.glow.scale.setScalar(1 + (on ? ((t * 1.6) % 1) * 1.1 : 0));
+      });
+      V.launchers.forEach((v, i) => {
+        const l = machines.launchers[i];
+        if (!l) return;
+        const a = Math.max(0, l.anim / 0.3);
+        v.spring.scale.y = 1 + a * 1.4;
+        v.mat.color.setScalar(1 + a * 0.6);
+      });
+      V.gates.forEach((v, i) => {
+        const gt = machines.gates[i];
+        v.field.material.opacity = 0.22 + (gt ? Math.max(0, gt.flash) * 1.2 : 0) + 0.05 * Math.sin(t * 3);
+      });
     }
-    // feature pop-in
-    for (const key of Object.keys(this.features)) {
-      const grp = this.features[key];
-      if (grp.visible && grp.userData.pop !== undefined && grp.userData.pop < 1) {
-        grp.userData.pop = Math.min(1, grp.userData.pop + dt * 2.2);
-        const p = grp.userData.pop;
-        grp.scale.setScalar(1 + Math.sin(p * Math.PI) * 0.18 - (1 - p) * 0.6 * (1 - p));
-      }
-    }
-    // collector ring + pipe pulses
-    this.pulse = Math.max(0, this.pulse - dt * 2.2);
-    this.hoodRing.scale.setScalar(1 + this.pulse * 0.25);
-    this.hoodRing.material.color.setHex(this.pulse > 0.15 ? 0xffffff : 0xfff2a0);
-    this.pulses.forEach((p) => {
-      p.userData.k = (p.userData.k + dt * (0.25 + this.pulse * 1.2)) % 1;
-      p.position.y = 1.7 + p.userData.k * 7.0;
-      p.scale.setScalar(0.4 + 0.6 * (1 - Math.abs(p.userData.k - 0.5) * 2));
-    });
-    // grade effects
-    if (this.grade >= 3) {
-      this.smokeT -= dt;
-      if (this.smokeT <= 0) {
-        this.smokeT = 0.32;
-        this.particles.emit(-2.5, 14.4, -0.1, 1, { color: [0xdfe3ee, 0xb7bdd0], speed: 0.9, life: 1.9, gravity: -0.6, size: 0.48, up: 1.2, spread: 0.2 });
-      }
-    }
-    if (this.grade >= 4 && this.spots) this.spots.forEach((s, i) => { s.rotation.z = s.userData.sx * (0.4 + Math.sin(this.t * 0.9 + i * 2) * 0.16); });
-    if (this.grade >= 5) this.beams.forEach((b, i) => { b.material.opacity = 0.14 + 0.1 * Math.sin(this.t * 2.2 + i * 1.7); });
-    if (this.grade >= 5) {
-      this.sparkT -= dt;
-      if (this.sparkT <= 0) {
-        this.sparkT = this.grade >= 6 ? 0.07 : 0.16;
-        const x = (Math.random() - 0.5) * 5.6;
-        this.particles.emit(x, 9 + Math.random() * 2, 0.9, 1, { color: this.grade >= 6 ? [0xfff6a8, 0xffc82e, 0xffffff] : [0x66fff0, 0xff6ad5, 0xffffff], speed: 0.8, life: 0.9, gravity: this.grade >= 6 ? 3 : 0.5, size: 0.12, up: 0.1 });
-      }
-    }
-    if (this.grade >= 6) this.crown.position.y = 13.0 + Math.sin(this.t * 2) * 0.12;
-    // machine pop + camera shake
-    this.pop = Math.max(0, this.pop - dt * 2.4);
-    const sc = 1 + Math.sin(this.pop * Math.PI) * 0.035;
-    this.machine.scale.set(sc, sc, sc);
-    this.machine.position.y = (1 - sc) * 5.5;
-    this.shake = Math.max(0, this.shake - dt * 2.6);
-    this._placeCam(this.shake * 0.45);
+    for (const r of V.rollers) r.obj.rotation.z += dt * (3 + 6 * this.pulse) * r.dir;
+
     this.particles.update(dt);
+    this.shake = Math.max(0, this.shake - dt * 3);
+    this._placeCam(this.shake * 0.25);
   }
 
   dispose() {

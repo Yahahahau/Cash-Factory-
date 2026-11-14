@@ -1,139 +1,105 @@
-import assert from 'node:assert/strict';
+// Economy / save tests (pure logic). Run: npm test
 import * as E from '../src/economy.js';
 import { sanitize, serialize } from '../src/save.js';
+import { getStage, layoutIndex, COIN_TYPES, MACHINE_IDS as LAYOUT_IDS } from '../src/layout.js';
 
-let n = 0;
-const t = (name, fn) => { fn(); n++; console.log('ok  ', name); };
+let pass = 0;
+function t(name, fn) {
+  try { fn(); pass++; console.log('ok   ' + name); } catch (e) { console.log('FAIL ' + name + '\n     ' + e.message); process.exitCode = 1; }
+}
+const eq = (a, b, m) => { if (a !== b) throw new Error(`${m || ''} expected ${b}, got ${a}`); };
+const truthy = (v, m) => { if (!v) throw new Error(m || 'expected truthy'); };
 
-t('costs strictly increase per level', () => {
-  for (const k of E.UPGRADE_KEYS) {
-    let prev = 0;
-    for (let l = 0; l < 30; l++) { const c = E.upgradeCost(k, l); assert.ok(c > prev); prev = c; }
-  }
-});
-
-t('cannot buy without money; buying deducts exactly the cost', () => {
+t('new game: $10, stage 1 target 50, first pusher costs $5', () => {
   const s = E.newState();
-  assert.equal(E.buyUpgrade(s, 'production'), false);
-  s.money = 100;
-  const cost = E.upgradeCost('production', 0);
-  assert.equal(E.buyUpgrade(s, 'production'), true);
-  assert.equal(s.money, 100 - cost);
-  assert.equal(s.levels.production, 1);
-  assert.equal(s.stats.upgradesBought, 1);
+  eq(s.cash, 10); eq(s.stage, 1); eq(E.stageTarget(1), 50); eq(E.machineCost('pusherA', 0), 5); eq(E.globalCost('rate', 0), 3);
 });
-
-t('every upgrade improves its stat', () => {
+t('coin type probabilities sum to 1 and rare chance upgrades increase it', () => {
   const s = E.newState();
-  s.money = 1e9;
-  const before = { sp: E.spawnRate(s), cr: E.collectRate(s), cap: E.capacity(s), vm: E.valueMultiplier(s) };
-  E.buyUpgrade(s, 'production'); E.buyUpgrade(s, 'efficiency'); E.buyUpgrade(s, 'storage'); E.buyUpgrade(s, 'value');
-  assert.ok(E.spawnRate(s) > before.sp && E.collectRate(s) > before.cr);
-  assert.ok(E.capacity(s) > before.cap && E.valueMultiplier(s) > before.vm);
+  const sum = E.typeProbabilities(s).reduce((a, b) => a + b, 0);
+  truthy(Math.abs(sum - 1) < 1e-9, 'sum');
+  const before = E.typeProbabilities(s)[3];
+  s.levels.rare = 5;
+  truthy(E.typeProbabilities(s)[3] > before, 'rare chance grows');
 });
-
-t('level cap per grade is enforced', () => {
+t('buying: cash is spent, level rises, cannot buy without money or above max', () => {
   const s = E.newState();
-  s.money = 1e30;
-  s.levels.production = E.levelCap(s);
-  assert.equal(E.upgradeInfo(s, 'production').atMax, true);
-  assert.equal(E.buyUpgrade(s, 'production'), false);
+  s.cash = 5;
+  truthy(E.buyUpgrade(s, 'pusherA'), 'buy'); eq(s.cash, 0); eq(s.machines.pusherA, 1);
+  truthy(!E.buyUpgrade(s, 'pusherA'), 'no money');
+  s.cash = 1e12; s.machines.pusherA = 12;
+  truthy(!E.buyUpgrade(s, 'pusherA'), 'max level');
+  s.levels.rate = 0; truthy(E.buyUpgrade(s, 'rate')); eq(s.levels.rate, 1);
 });
-
-t('automation requires grade', () => {
+t('upgrade effects are measurable and monotonic (rate, capacity, pusher, conveyor, blower, magnet, launcher)', () => {
+  truthy(E.spawnRate({ levels: { rate: 5 } }) > E.spawnRate({ levels: { rate: 4 } }));
+  truthy(E.capacity({ levels: { capacity: 3 } }) > E.capacity({ levels: { capacity: 2 } }));
+  truthy(E.pusherParams(6).interval < E.pusherParams(1).interval, 'pusher interval');
+  truthy(!E.pusherParams(0).active && E.pusherParams(1).active, 'pusher activation');
+  truthy(E.conveyorSpeed(5) > E.conveyorSpeed(1)); truthy(E.blowerForce(5) > E.blowerForce(1));
+  truthy(E.magnetForce(5) > E.magnetForce(1)); truthy(E.launcherParams(5).power > E.launcherParams(1).power);
   const s = E.newState();
-  s.money = 1e30;
-  assert.equal(E.buyUpgrade(s, 'automation'), true); // level 1 at grade 1
-  assert.equal(E.buyUpgrade(s, 'automation'), false); // level 2 needs grade 2
-  assert.ok(E.upgradeInfo(s, 'automation').locked);
-  assert.equal(E.nozzleCount(s), 2);
+  truthy(E.effectText(s, 'rate').includes('→')); truthy(E.effectText(s, 'pusherA').length > 3);
 });
-
-t('grade requirements and upgrade', () => {
+t('stage targets grow, rewards grow, value multiplier grows', () => {
+  eq(E.stageTarget(2), 250);
+  for (let n = 1; n < 12; n++) { truthy(E.stageTarget(n + 1) >= E.stageTarget(n), 'target'); truthy(E.stageReward(n + 1).cash > E.stageReward(n).cash, 'reward'); }
+  truthy(E.stageValueMult(5) > E.stageValueMult(1));
+});
+t('stage completion pays cash + gems, advances stage, resets progress (progress is separate from cash)', () => {
   const s = E.newState();
-  s.money = 1e15;
-  assert.equal(E.upgradeGrade(s), false); // levels missing
-  const need = Math.ceil(E.levelCap(s) * 0.8);
-  for (const k of E.CORE_KEYS) s.levels[k] = need;
-  const g = E.gradeRequirements(s);
-  assert.equal(g.ok, true);
-  const before = s.money;
-  assert.equal(E.upgradeGrade(s), true);
-  assert.equal(s.grade, 2);
-  assert.equal(s.money, before - E.GRADES[1].cost);
-  assert.ok(s.unlocked.includes('grade2'));
+  s.progress = 49; truthy(!E.stageDone(s));
+  s.progress = 50; truthy(E.stageDone(s));
+  const c0 = s.cash;
+  const r = E.completeStage(s);
+  eq(s.stage, 2); eq(s.progress, 0); eq(s.cash, c0 + r.cash); truthy(r.gems >= 2);
 });
-
-t('last grade has no next', () => {
+t('coin value uses stage multiplier, gate multiplier and combo bonus (capped)', () => {
   const s = E.newState();
-  s.grade = 6;
-  assert.equal(E.gradeRequirements(s), null);
-  assert.equal(E.upgradeGrade(s), false);
+  eq(E.coinValue(s, 0), 1);
+  eq(E.coinValue(s, 2), 10);
+  eq(E.coinValue(s, 0, 2), 2);
+  truthy(E.coinValue(s, 0, 1, 20) > E.coinValue(s, 0, 1, 0));
+  truthy(E.comboBonus(10000) <= 1.5);
+  s.stage = 3; truthy(E.coinValue(s, 0) > 1);
 });
-
-t('grade raises income at equal levels', () => {
+t('offline income: needs an active pusher, capped, 50% efficiency', () => {
   const s = E.newState();
-  let prev = E.incomePerSec(s);
-  for (let g = 2; g <= 6; g++) { s.grade = g; const inc = E.incomePerSec(s); assert.ok(inc > prev); prev = inc; }
+  s.lastSaved = Date.now() - 3600 * 1000;
+  eq(E.computeOffline(s), null);
+  s.machines.pusherA = 3; s.machines.pusherB = 3; s.levels.rate = 4;
+  const o = E.computeOffline(s);
+  truthy(o && o.gain > 0, 'gain');
+  s.lastSaved = Date.now() - 100 * 3600 * 1000;
+  const o2 = E.computeOffline(s);
+  truthy(o2.capped && o2.counted <= E.offlineCapSeconds(s) + 1);
 });
-
-t('spawn rate is capped', () => {
-  const s = E.newState();
-  s.grade = 6; s.levels.production = 60; s.levels.automation = 5;
-  assert.ok(E.spawnRate(s) <= E.MAX_SPAWN_RATE);
-});
-
-t('offline earnings: none <30s, capped, 50% efficiency', () => {
-  const s = E.newState();
-  s.levels.production = 5; s.levels.efficiency = 5;
-  s.lastSaved = 1000;
-  assert.equal(E.computeOffline(s, 1000 + 10000), null);
-  const r = E.computeOffline(s, 1000 + 3600 * 1000);
-  assert.ok(Math.abs(r.gain - E.incomePerSec(s) * 3600 * E.OFFLINE_EFFICIENCY) < 1e-6);
-  const big = E.computeOffline(s, 1000 + 1000 * 3600 * 1000);
-  assert.equal(big.capped, true);
-  assert.equal(big.counted, E.offlineCapSeconds(s));
-  assert.ok(big.counted <= E.MAX_OFFLINE_SECONDS_HARD);
-});
-
-t('type probabilities sum to 1 and gems need grade 3', () => {
-  const s = E.newState();
-  for (let g = 1; g <= 6; g++) {
-    s.grade = g;
-    for (const a of [0, 2]) { s.levels.automation = a; const p = E.typeProbabilities(s); assert.ok(Math.abs(p.reduce((x, y) => x + y) - 1) < 1e-9); }
-  }
-  s.grade = 2; assert.equal(E.typeProbabilities(s)[3], 0);
-  s.grade = 3; assert.ok(E.typeProbabilities(s)[3] > 0);
-});
-
 t('formatting', () => {
-  assert.equal(E.fmtMoney(5), '$5');
-  assert.equal(E.fmtNum(1500), '1.50K');
-  assert.equal(E.fmtNum(2.5e6), '2.50M');
-  assert.ok(E.fmtDuration(3700).includes('ชม.'));
+  eq(E.fmtMoney(5), '$5'); eq(E.fmtCash(12345), '12.3K'); eq(E.fmtDuration(125), '2 นาที');
 });
-
-t('save sanitize round trip and corrupt data', () => {
+t('save: round trip keeps cash, gems, stage, progress, levels, machines, settings, timestamp', () => {
   const s = E.newState();
-  s.money = 1234.5; s.grade = 3; s.levels.value = 7; s.settings.pixel = false; s.settings.quality = 'low';
-  s.stats.objectsCollected = 99;
-  const back = sanitize(JSON.parse(serialize(s)));
-  assert.equal(back.money, 1234.5);
-  assert.equal(back.grade, 3);
-  assert.equal(back.levels.value, 7);
-  assert.equal(back.settings.pixel, false);
-  assert.equal(back.settings.quality, 'low');
-  assert.equal(back.stats.objectsCollected, 99);
-  assert.ok(back.unlocked.includes('grade3'));
-  const bad = sanitize({ money: -5, grade: 99, levels: { production: 9999, automation: 99 }, settings: { quality: 'x', sfx: 7 } });
-  assert.equal(bad.money, 0);
-  assert.equal(bad.grade, 6);
-  assert.equal(bad.levels.production, 60);
-  assert.ok(bad.levels.automation <= 5);
-  assert.equal(bad.settings.quality, 'high');
-  assert.equal(bad.settings.sfx, 1);
-  assert.equal(sanitize(null).money, 0);
-  assert.equal(sanitize({ money: NaN }).money, 0);
+  s.cash = 1234; s.gems = 7; s.stage = 3; s.progress = 120; s.levels.rate = 5; s.machines.pusherB = 4; s.machines.conv1 = 2; s.settings.pixel = false;
+  const r = sanitize(JSON.parse(serialize(s)));
+  eq(r.cash, 1234); eq(r.gems, 7); eq(r.stage, 3); eq(r.progress, 120); eq(r.levels.rate, 5); eq(r.machines.pusherB, 4); eq(r.machines.conv1, 2); eq(r.settings.pixel, false);
+  truthy(Math.abs(r.lastSaved - s.lastSaved) < 5);
+});
+t('save: corrupt / hostile data is sanitised', () => {
+  const r = sanitize({ cash: 'x', stage: -4, levels: { rate: 1e9 }, machines: { pusherA: 99 }, settings: { quality: 'ultra' } });
+  eq(r.stage, 1); eq(r.levels.rate, E.GLOBALS.rate.max); eq(r.machines.pusherA, 12); eq(r.settings.quality, 'high');
+  eq(sanitize(null).cash, 10);
+});
+t('layout: every stage has labels for its machines, a pit, a pipe and coin configs match', () => {
+  for (let n = 1; n <= 12; n++) {
+    const d = getStage(n);
+    truthy(d.labels.length >= d.pistons.length + d.belts.length, 'labels stage ' + n);
+    for (const l of d.labels) truthy(E.MACHINES[l.id], 'machine ' + l.id);
+    truthy(d.pit.x1 > d.pit.x0 && d.pipe && d.spawn, 'pit/pipe');
+    truthy(d.palette, 'palette');
+  }
+  eq(layoutIndex(6), 3); eq(layoutIndex(7), 4); eq(layoutIndex(8), 5); eq(layoutIndex(9), 3);
+  eq(COIN_TYPES.length, E.COIN_VALUES.length);
+  for (const id of LAYOUT_IDS) truthy(E.MACHINES[id], 'id ' + id);
 });
 
-console.log(`\n${n} tests passed`);
+console.log(`\n${pass} tests passed`);

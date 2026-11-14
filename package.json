@@ -3,13 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "PIXEL CASH FACTORY - 3D retro idle tycoon (Three.js + Rapier)",
+  "description": "PIXEL COIN PUSHER - 2.5D retro coin-pusher incremental (Three.js + Rapier)",
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview --host",
     "test": "node scripts/test.mjs",
-    "sim": "node scripts/sim.mjs",
     "test:physics": "node scripts/physics-test.mjs"
   },
   "dependencies": {
