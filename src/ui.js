@@ -1,4 +1,6 @@
 import * as E from './economy.js';
+import { paintBall } from './sprites.js';
+import { openMini, tickMini } from './screens.js';
 
 const QUALITY_TH = { low: 'ต่ำ', medium: 'กลาง', high: 'สูง' };
 const ICON = { pusher: 'ลูกสูบ', conveyor: 'สายพาน', blower: 'พัดลม', magnet: 'แม่เหล็ก', launcher: 'เครื่องดีด', rate: 'เหรียญ/วิ', capacity: 'ความจุ', rare: 'หายาก' };
@@ -27,6 +29,7 @@ export class UI {
       drop: g('dropBtn'), dropFill: g('dropFill'), charges: g('charges'),
       rateBtn: g('rateBtn'), ratePrice: g('ratePrice'), rateLv: g('rateLv'), rateInfo: g('rateInfo'),
       padCap: g('padCap'), padRare: g('padRare'), menu: g('menuBtn'),
+      miniBtn: g('miniBtn'), miniIco: g('miniIco'), miniTxt: g('miniTxt'), runBtn: g('runBtn'), runChip: g('runChip'), boostChip: g('boostChip'), miniHost: g('miniHost'),
     };
   }
 
@@ -49,6 +52,9 @@ export class UI {
       el.addEventListener('click', (e) => { e.stopPropagation(); fn(e); });
     };
     bindBtn(this.el.menu, () => { this.h.onClick(); this.openMenu(); });
+    bindBtn(this.el.miniBtn, () => { this.h.onClick(); this._pop(this.el.miniBtn); openMini(this, this.state, this.h); });
+    bindBtn(this.el.runBtn, () => { this.h.onClick(); this.h.onNewRunOpen(); });
+    this._wf = 0;
     bindBtn(this.el.drop, () => {
       const ok = this.h.onDrop();
       const b = this.el.drop;
@@ -63,6 +69,11 @@ export class UI {
 
   _pop(el) {
     el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+  }
+
+  onBoostEnd() {
+    this.toast('บูสต์หมดเวลาแล้ว · คูลดาวน์ ' + E.ECON.mini.cooldownMinutes + ' นาที', 3000);
+    this.updateMini(this.state);
   }
 
   // ---------- platform price labels (attached to world positions) ----------
@@ -172,6 +183,7 @@ export class UI {
       this.cache.pct = Math.round(pct * 2);
       this.el.pFill.style.width = pct + '%';
     }
+    this.setText('runChip', this.el.runChip, `รัน ${s.run} · ★${s.perm.points}`);
     this.setText('cash', this.el.cash, E.fmtCash(s.cash));
     this.setText('gems', this.el.gems, String(Math.floor(s.gems)));
     const combo = game.combo >= 5 ? `คอมโบ ×${game.combo} · +${Math.round((E.comboBonus(game.combo) - 1) * 100)}%` : '';
@@ -202,6 +214,24 @@ export class UI {
       p.classList.toggle('ready', info.canBuy);
     }
     this.renderSheet(false);
+    this.updateMini(s);
+  }
+
+  // mini-game button + boost chip + new-run button (timestamp based, so it is always right after a refresh)
+  updateMini(s) {
+    const st = E.miniStatus(s);
+    const b = this.el.miniBtn;
+    const cls = 'mini-btn ' + (st.state === 'ready' ? 'ready' : st.state === 'boost' ? 'boost' : 'cool');
+    if (b.className !== cls) b.className = cls;
+    const txt = st.state === 'ready' ? 'เล่น' : st.state === 'boost' ? '×' + st.mult + '\n' + E.fmtClock(st.remaining) : E.fmtClock(st.remaining);
+    this.setText('miniTxt', this.el.miniTxt, txt);
+    const bc = this.el.boostChip;
+    if (st.state === 'boost') { bc.classList.remove('hidden'); this.setText('boostChip', bc, `BOOST ×${st.mult} ${E.fmtClock(st.remaining)}`); }
+    else bc.classList.add('hidden');
+    this._wf = (this._wf + 1) % 4;
+    paintBall(this.el.miniIco, [1, 0, 1, 2][this._wf], false);
+    this.el.runBtn.classList.toggle('hidden', !E.canNewRun(s));
+    tickMini(this, s);
   }
 
   // ---------- floating cash ----------
@@ -290,14 +320,28 @@ export class UI {
       ['รายได้ออฟไลน์รวม', E.fmtMoney(st.offlineEarned)],
       ['เวลาที่เล่น', E.fmtDuration(st.playSeconds)],
     ];
+    const ach = s.perm.achievements.map((id) => E.ACHIEVEMENTS[id] && E.ACHIEVEMENTS[id].name).filter(Boolean).join(' · ') || 'ยังไม่มี';
+    const runRows = [
+      ['รันปัจจุบัน', String(s.run)],
+      ['แต้มอัปเกรดถาวร', `${s.perm.points} (รายได้ ×${E.permMult(s).toFixed(2)})`],
+      ['รันที่จบแล้ว', String(s.perm.runsCompleted)],
+      ['ด่านสูงสุด', String(Math.max(s.perm.bestStage, s.stage))],
+      ['Flying Ball สูงสุด', String(s.mini.best)],
+      ['Flying Ball สำเร็จ', `${s.mini.wins}/${s.mini.plays}`],
+    ];
     this._open(
-      `<div class="dlg"><h2>เมนู</h2>
+      `<div class="dlg pxd"><h2>เมนู</h2>
+      <div class="row"><div>รันใหม่<div class="sub">${E.canNewRun(s) ? 'เริ่มรันใหม่เพื่อรับแต้มถาวร' : 'ปลดล็อกที่ด่าน ' + E.ECON.run.minStage}</div></div><button class="small-btn" id="sNewRun" ${E.canNewRun(s) ? '' : 'disabled'}>เริ่มรันใหม่</button></div>
       <div class="row"><div>เอฟเฟกต์พิกเซลเรโทร<div class="sub">Retro Pixel Effect</div></div>
         <div class="seg" id="sPixel"><button data-v="1" class="${pixelOn ? 'on' : ''}">เปิด ON</button><button data-v="0" class="${!pixelOn ? 'on off' : ''}">ปิด OFF</button></div></div>
       <div class="row"><div>เสียงเอฟเฟกต์</div><input id="sSfx" type="range" min="0" max="100" value="${Math.round(s.settings.sfx * 100)}"></div>
       <div class="row"><div>เสียงดนตรี</div><input id="sMusic" type="range" min="0" max="100" value="${Math.round(s.settings.music * 100)}"></div>
       <div class="row"><div>คุณภาพกราฟิก<div class="sub">ต่ำ = ลื่นกว่า (ปิดเงา)</div></div>
         <div class="seg" id="sQ">${['low', 'medium', 'high'].map((k) => `<button data-v="${k}" class="${q === k ? 'on' : ''}">${QUALITY_TH[k]}</button>`).join('')}</div></div>
+      <div class="row"><div>การควบคุม<div class="sub">แตะสนามเพื่อดีดเหรียญ · ปุ่มปล่อยเหรียญ · Flying Ball: แตะ/เว้นวรรคเพื่อบิน</div></div></div>
+      <div class="sec-title">รันและความสำเร็จ</div>
+      ${runRows.map((r) => `<div class="kv"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')}
+      <div class="note">ความสำเร็จ: ${ach}</div>
       <div class="sec-title">สถิติ</div>
       ${rows.map((r) => `<div class="kv"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')}
       <div class="row"><div>เวอร์ชัน<div class="sub">${this.h.version}${this.h.inIframe ? ' · ฝังใน iframe' : ''}</div></div><button class="small-btn" id="sUpd">เช็กอัปเดต</button></div>
@@ -306,6 +350,7 @@ export class UI {
       'menu'
     );
     const m = this.el.modal;
+    m.querySelector('#sNewRun').addEventListener('click', () => { this.closeModal(); this.h.onNewRunOpen(); });
     m.querySelector('#sPixel').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
       const on = b.dataset.v === '1';

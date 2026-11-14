@@ -1,6 +1,6 @@
 // Save / load with localStorage. Falls back to memory when storage is blocked (some WebViews / iframes).
 // v2 schema = coin-pusher game (the old factory-tycoon v1 save is ignored).
-import { newState, MACHINES, MACHINE_TYPES, GLOBALS } from './economy.js';
+import { newState, MACHINES, MACHINE_TYPES, GLOBALS, ECON } from './economy.js';
 
 export const SAVE_KEY = 'pixelCashFactory.save.v2';
 let memoryCopy = null;
@@ -38,12 +38,35 @@ export function sanitize(raw) {
   s.settings.sfx = num(st.sfx, 0.7, 0, 1);
   s.settings.music = num(st.music, 0.35, 0, 1);
   s.settings.quality = ['low', 'medium', 'high'].includes(st.quality) ? st.quality : 'high';
+  // v3 fields (a v2 save simply lacks them and keeps the defaults: run 1, no boost)
+  s.run = Math.floor(num(raw.run, 1, 1, 99999));
+  s.priceTier = Math.floor(num(raw.priceTier, 0, 0, 60));
+  s.runStats.earned = num(raw.runStats && raw.runStats.earned, 0);
+  s.runStats.coins = num(raw.runStats && raw.runStats.coins, 0);
+  const pm = raw.perm || {};
+  s.perm.points = Math.floor(num(pm.points, 0));
+  s.perm.bestStage = Math.floor(num(pm.bestStage, s.stage, 1, 9999));
+  s.perm.runsCompleted = Math.floor(num(pm.runsCompleted, 0));
+  s.perm.bestRunEarned = num(pm.bestRunEarned, 0);
+  for (const k of ['unlocks', 'achievements', 'cosmetics']) s.perm[k] = Array.isArray(pm[k]) ? pm[k].filter((x) => typeof x === 'string').slice(0, 64) : [];
+  const horizon = Date.now() + 24 * 3600000;
+  const bo = raw.boost || {};
+  const maxMult = Math.max(...ECON.mini.rewards.map((r) => r.mult));
+  const bm = num(bo.mult, 1, 1, maxMult);
+  const bu = typeof bo.until === 'number' && isFinite(bo.until) && bo.until > 0 && bo.until <= horizon ? bo.until : 0;
+  s.boost = bm > 1 && bu ? { mult: bm, until: bu } : { mult: 1, until: 0 };
+  s.cooldownUntil = num(raw.cooldownUntil, 0, 0, horizon + 3600000);
+  const mi = raw.mini || {};
+  for (const k of ['best', 'plays', 'wins', 'fails', 'gates', 'bestMult']) s.mini[k] = Math.floor(num(mi[k], 0));
+  const se = mi.session;
+  s.mini.session = se && typeof se.id === 'string' ? { id: se.id.slice(0, 40), objective: Math.floor(num(se.objective, 10, 1, 100)), t0: num(se.t0, 0) } : null;
+  void ECON;
   s.lastSaved = num(raw.lastSaved, Date.now(), 0, Date.now() + 60000);
   return s;
 }
 
 export function serialize(state) {
-  return JSON.stringify({ v: 2, ...state });
+  return JSON.stringify({ v: 3, ...state });
 }
 
 export function save(state) {

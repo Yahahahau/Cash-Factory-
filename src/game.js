@@ -136,6 +136,15 @@ export class Game {
       for (const idx of r.escaped) { this.escaped++; this._collect(idx, false); }
     }
 
+    // ---- timers: boost expiry -> 30 min cooldown, wallet price tier
+    this.timerT = (this.timerT || 0) + dt;
+    if (this.timerT >= 0.25) {
+      this.timerT = 0;
+      const now = Date.now();
+      if (E.expireBoost(s, now)) this.ui.onBoostEnd && this.ui.onBoostEnd();
+      if (E.refreshTier(s)) this.ui.updateLabels && this.ui.updateLabels();
+    }
+
     // ---- anti-jam monitoring
     this.machines.scan(dt);
 
@@ -156,7 +165,8 @@ export class Game {
     if (this.floatT <= 0 && this.floatSum > 0) {
       const pit = this.stageDef.pit;
       const p = this.world.project((pit.x0 + pit.x1) / 2, 2.0, 0.3, this.sceneW, this.sceneH);
-      this.ui.floatText(p.x, p.y, '+' + E.fmtMoney(this.floatSum), this.floatSum > 20 ? 'big' : '');
+      const bm = E.boostMult(s);
+      this.ui.floatText(p.x, p.y, '+' + E.fmtMoney(this.floatSum) + (bm > 1 ? ' ×' + bm : ''), bm > 1 ? 'big' : this.floatSum > 20 ? 'big' : '');
       this.floatSum = 0;
       this.floatT = 0.3;
     }
@@ -176,9 +186,13 @@ export class Game {
       this.comboT = 2.5;
       if (this.combo > s.stats.bestCombo) s.stats.bestCombo = this.combo;
     }
-    const value = E.coinValue(s, sl.type, sl.mult, fx ? this.combo : 0);
+    const inc = E.income(s, E.coinValue(s, sl.type, sl.mult, fx ? this.combo : 0));
+    const value = inc.final;
+    this.boostNow = inc.mult;
     s.cash += value;
     s.stats.totalEarned += value;
+    s.runStats.earned += value;
+    s.runStats.coins++;
     s.stats.coinsCollected++;
     this._mAcc += value;
     this.floatSum += value;
@@ -201,11 +215,12 @@ export class Game {
     let bonus = 0;
     for (const idx of [...this.physics.active]) {
       const sl = this.physics.slots[idx];
-      bonus += E.coinValue(s, sl.type, sl.mult, 0);
+      bonus += E.income(s, E.coinValue(s, sl.type, sl.mult, 0)).final;
       this.physics.release(idx);
     }
     s.cash += bonus;
     s.stats.totalEarned += bonus;
+    s.runStats.earned += bonus;
     const done = s.stage;
     const reward = E.completeStage(s);
     this.stageBusy = 2.4;

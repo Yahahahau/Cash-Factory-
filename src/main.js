@@ -9,6 +9,8 @@ import { GameAudio } from './audio.js';
 import { UI } from './ui.js';
 import { Game } from './game.js';
 import { Embed, BUILD_ID, inIframe } from './embed.js';
+import { installSkins } from './skins.js';
+import { showReward, openNewRun } from './screens.js';
 
 const QUALITY = {
   low: { limit: 50, rows: 330, dpr: 1.5, shadows: false, shadowMap: 512 },
@@ -29,7 +31,9 @@ async function boot() {
     throw e;
   }
 
+  installSkins();
   let { state, fresh } = Save.load();
+  E.normalizeClock(state, Date.now());
   const canvas = document.getElementById('c');
   const sceneEl = document.getElementById('scene');
 
@@ -93,10 +97,70 @@ async function boot() {
       ui.toast('รีเซ็ตความคืบหน้าแล้ว');
     },
     onCheckUpdate: () => embed.check(true),
+    // ----- Flying Ball -----
+    onMiniStart: () => startMini(),
+    onTick: () => audio.tap(),
+    onReveal: () => { audio.grade(); },
+    // ----- runs -----
+    onNewRunOpen: () => {
+      if (!E.canNewRun(state)) { ui.toast('ปลดล็อกที่ด่าน ' + E.ECON.run.minStage, 1600); return; }
+      openNewRun(ui, state, E.previewNewRun(state), ui.h);
+    },
+    onNewRun: () => {
+      audio.unlock();
+      const pv = E.applyNewRun(state);
+      game.reset(state);
+      ui.state = state;
+      doSave();
+      audio.grade();
+      ui.flash();
+      ui.toast(`รันที่ ${state.run} เริ่มแล้ว · เงินเริ่มต้น ${E.fmtMoney(state.cash)} · รายได้ถาวร ×${E.permMult(state).toFixed(2)}`, 3400);
+      void pv;
+    },
     onModal: () => {},
   });
   ui.state = state;
   ui.world = world;
+
+  // ---------- Flying Ball (lazy: the module is only fetched when the player starts it) ----------
+  let miniOpen = false;
+  let lastReward = null;
+  async function startMini() {
+    audio.unlock();
+    const ses = E.startMini(state);
+    if (!ses) { ui.toast('ยังเล่นไม่ได้ (บูสต์/คูลดาวน์)', 1600); ui.closeModal(); return; }
+    doSave();
+    ui.closeModal();
+    miniOpen = true;
+    const { FlyView } = await import('./flyball.js');
+    lastReward = null;
+    const view = new FlyView(ui.el.miniHost, {
+      objective: ses.objective,
+      best: state.mini.best,
+      audio,
+      onFinish: (result) => {
+        const r = E.finishMini(state, result);
+        if (r.ok) { lastReward = r; ui.updateMini(state); }
+        const na = E.checkAchievements(state);
+        if (na.length) ui.toast('ความสำเร็จใหม่: ' + na.map((id) => E.ACHIEVEMENTS[id].name).join(', '), 2600);
+        doSave(); // settle + persist at once: a refresh can never replay this result
+        return { ...r, best: state.mini.best };
+      },
+      onRetry: () => {
+        const s2 = E.startMini(state);
+        if (!s2) return null;
+        doSave();
+        return s2.objective;
+      },
+      onClose: (won) => {
+        miniOpen = false;
+        last = performance.now();
+        ui.updateMini(state);
+        if (won && lastReward) { showReward(ui, lastReward, ui.h); lastReward = null; }
+      },
+    });
+    window.__pcf && (window.__pcf.miniView = view);
+  }
 
   // ---------- machine feedback ----------
   machines.onFire = (kind) => {
@@ -165,9 +229,11 @@ async function boot() {
   // ---------- offline earnings ----------
   function applyOffline() {
     const info = E.computeOffline(state);
+    E.expireBoost(state);
     if (!info) return;
     state.cash += info.gain;
     state.stats.totalEarned += info.gain;
+    state.runStats.earned += info.gain;
     state.stats.offlineEarned += info.gain;
     state.stats.coinsCollected += info.coins;
     state.progress = Math.min(E.stageTarget(state.stage) - 1, state.progress + info.coins);
@@ -190,7 +256,9 @@ async function boot() {
     suspendedAt = null;
     audio.setPaused(false);
     last = performance.now();
+    E.normalizeClock(state, Date.now());
     applyOffline();
+    lastNow = Date.now();
   }
   document.addEventListener('visibilitychange', () => (document.hidden ? suspend() : resume()));
   window.addEventListener('pagehide', doSave);
@@ -207,6 +275,7 @@ async function boot() {
   // ---------- main loop ----------
   let last = performance.now();
   let slowT = 0;
+  let lastNow = Date.now();
   let ema = 16;
   let autoSave = 0;
   let lowFpsTime = 0;
@@ -222,11 +291,23 @@ async function boot() {
     world.update(dt, machines);
     ui.update(state, game);
     slowT += dt;
-    if (slowT >= 0.25) { slowT = 0; ui.slowUpdate(state, machines); }
+    if (slowT >= 0.25) {
+      slowT = 0;
+      const now = Date.now();
+      if (now < lastNow - 2000) E.normalizeClock(state, now, lastNow); // clock moved backwards: keep remaining times
+      lastNow = now;
+      ui.slowUpdate(state, machines);
+      const had = state.perm.unlocks.length;
+      const na = E.checkAchievements(state);
+      if (state.perm.unlocks.length > had) ui.toast('ปลดล็อก: เริ่มรันใหม่ (ปุ่ม NEW RUN)', 3000);
+      if (na.length) ui.toast('ความสำเร็จใหม่: ' + na.map((id) => E.ACHIEVEMENTS[id].name).join(', '), 2600);
+    }
     autoSave += dt;
     if (autoSave >= 5) { autoSave = 0; doSave(); }
-    if (state.settings.pixel) pipeline.render();
-    else world.renderer.render(world.scene, world.camera);
+    if (!miniOpen) {
+      if (state.settings.pixel) pipeline.render();
+      else world.renderer.render(world.scene, world.camera);
+    }
 
     // adaptive quality: step down once if the device cannot keep up
     ema += (raw * 1000 - ema) * 0.05;
