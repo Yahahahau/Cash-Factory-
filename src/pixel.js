@@ -30,6 +30,15 @@ void main(){
   vec2 texel = floor(gl_FragCoord.xy / blockPx);
   vec2 uv = (texel + 0.5) / rtSize;
   vec3 col = texture2D(tColor, uv).rgb;
+  // mild unsharp mask on the low-res image: crisper surfaces / coin faces, still no outlines
+  vec2 px = 1.0 / rtSize;
+  vec3 blur = 0.25 * (texture2D(tColor, uv + vec2(px.x, 0.0)).rgb + texture2D(tColor, uv - vec2(px.x, 0.0)).rgb
+                    + texture2D(tColor, uv + vec2(0.0, px.y)).rgb + texture2D(tColor, uv - vec2(0.0, px.y)).rgb);
+  col = clamp(col + (col - blur) * 0.55, 0.0, 1.0);
+  // a touch more contrast and saturation so each model reads clearly
+  float lum = dot(col, vec3(0.299, 0.587, 0.114));
+  col = mix(vec3(lum), col, 1.12);
+  col = clamp((col - 0.5) * 1.07 + 0.5, 0.0, 1.0);
   gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>
   // gentle palette quantisation + very light ordered dither (no outlines / edge detection)
@@ -62,7 +71,7 @@ export class PixelPipeline {
         tColor: { value: null },
         rtSize: { value: new THREE.Vector2(1, 1) },
         blockPx: { value: 3 },
-        levels: { value: 64 },
+        levels: { value: 96 },
       },
     });
     const quad = new THREE.Mesh(geo, this.mat);
@@ -82,7 +91,7 @@ export class PixelPipeline {
       minFilter: THREE.NearestFilter,
       magFilter: THREE.NearestFilter,
       depthBuffer: true,
-      samples: 0,
+      samples: 4,
     });
     this.rt.texture.generateMipmaps = false;
     this.mat.uniforms.tColor.value = this.rt.texture;

@@ -11,9 +11,9 @@ import { Game } from './game.js';
 import { Embed, BUILD_ID, inIframe } from './embed.js';
 
 const QUALITY = {
-  low: { limit: 50, rows: 230, dpr: 1.5, shadows: false, shadowMap: 512 },
-  medium: { limit: 80, rows: 280, dpr: 2, shadows: true, shadowMap: 512 },
-  high: { limit: 120, rows: 330, dpr: 2, shadows: true, shadowMap: 1024 },
+  low: { limit: 50, rows: 330, dpr: 1.5, shadows: false, shadowMap: 512 },
+  medium: { limit: 80, rows: 420, dpr: 2, shadows: true, shadowMap: 512 },
+  high: { limit: 120, rows: 500, dpr: 2, shadows: true, shadowMap: 1024 },
 };
 const MAX_BODIES = 130;
 
