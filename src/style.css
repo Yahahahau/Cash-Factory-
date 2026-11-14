@@ -324,3 +324,8 @@ button { cursor: default; border: 0; padding: 0; background: none; }
 .hudwin.rate { width: 100%; }
 @media (orientation: landscape) and (max-height: 520px) { .hud-stage .line { display: none; } .hud-wallet { width: 96px; } .hud-stage .hb { padding: 3px; } }
 .hud-stage .line { overflow: hidden; }
+/* compact boost / cooldown button: one short line, so it never covers platform upgrade buttons */
+#miniBtn:not(.ready) { min-height: 26px; padding: 2px 8px; }
+#miniBtn:not(.ready) .mt { flex-direction: row; align-items: center; gap: 6px; }
+#miniBtn:not(.ready) .mt small { font-size: var(--fs); color: inherit; }
+#miniBtn:not(.ready) canvas { width: 20px; height: 16px; }

@@ -193,11 +193,12 @@ export class UI {
     const b = this.el.miniBtn;
     const cls = 'xpbtn ' + (st.state === 'ready' ? 'ready' : st.state === 'boost' ? 'boost' : 'cool');
     if (b.className !== cls) b.className = cls;
-    this.setText('miniTxt', this.el.miniTxt, st.state === 'ready' ? 'Play' : st.state === 'boost' ? 'Boost x' + st.mult : 'Cooldown');
+    this.setText('miniTxt', this.el.miniTxt, st.state === 'ready' ? 'Play' : st.state === 'boost' ? 'x' + st.mult : 'CD');
     this.setText('miniSub', this.el.miniSub, st.state === 'ready' ? 'Flying Ball' : E.fmtClock(st.remaining));
     const bc = this.el.boostChip;
     if (st.state === 'boost') { bc.classList.remove('hidden'); this.setText('boostChip', bc, `Boost x${st.mult} ${E.fmtClock(st.remaining)}`); }
     else bc.classList.add('hidden');
+    bc.classList.add('hidden');
     const bt = this.el.boostTray;
     if (st.state === 'ready') bt.classList.add('hidden');
     else { bt.classList.remove('hidden'); this.setText('trayTxt', this.el.trayTxt, (st.state === 'boost' ? 'x' + st.mult + ' ' : 'CD ') + E.fmtClock(st.remaining)); }
