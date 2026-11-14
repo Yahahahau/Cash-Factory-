@@ -74,16 +74,6 @@ async function boot() {
       if (!ok) audio.deny();
       return ok;
     },
-    onShake: () => {
-      audio.unlock();
-      const r = machines.manual();
-      if (r.ok) {
-        ui.toast('ลูกสูบดันเหรียญพร้อมเขย่ากระดาน!', 1400);
-      } else {
-        audio.deny();
-        ui.toast('ยังไม่พร้อม รออีก ' + Math.ceil(r.wait) + ' วินาที', 1200);
-      }
-    },
     onSetting: (k, v) => {
       state.settings[k] = v;
       if (k === 'pixel') applySize();
@@ -231,7 +221,6 @@ async function boot() {
     world.syncObjects(physics);
     world.update(dt, machines);
     ui.update(state, game);
-    ui.setAssistProgress(machines.manualCd > 0 ? machines.manualProgress : 1);
     slowT += dt;
     if (slowT >= 0.25) { slowT = 0; ui.slowUpdate(state, machines); }
     autoSave += dt;

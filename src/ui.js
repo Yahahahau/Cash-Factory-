@@ -24,16 +24,22 @@ export class UI {
       stageTitle: g('stageTitle'), pFill: g('pFill'), pText: g('pText'), cash: g('cash'), gems: g('gems'), combo: g('combo'),
       labels: g('labels'), floats: g('floats'), sheet: g('sheet'), modal: g('modal'), toast: g('toast'), flash: g('flash'),
       banner: g('banner'), bannerSmall: g('bannerSmall'), bannerTitle: g('bannerTitle'), bannerSub: g('bannerSub'), loading: g('loading'),
-      drop: g('dropBtn'), dropFill: g('dropFill'), charges: g('charges'), assist: g('assist'),
+      drop: g('dropBtn'), dropFill: g('dropFill'), charges: g('charges'),
       rateBtn: g('rateBtn'), ratePrice: g('ratePrice'), rateLv: g('rateLv'), rateInfo: g('rateInfo'),
       padCap: g('padCap'), padRare: g('padRare'), menu: g('menuBtn'),
     };
   }
 
+  _bump(el) {
+    el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+  }
+
   setText(key, el, text) {
     if (this.cache[key] !== text) {
+      const had = this.cache[key] !== undefined;
       this.cache[key] = text;
       el.textContent = text;
+      if (had && (key === 'cash' || key === 'gems' || key === 'stageTitle')) this._bump(el);
     }
   }
 
@@ -48,7 +54,6 @@ export class UI {
       const b = this.el.drop;
       if (ok) { b.classList.remove('press'); void b.offsetWidth; b.classList.add('press'); }
     });
-    bindBtn(this.el.assist, () => this.h.onShake());
     bindBtn(this.el.rateBtn, () => {
       const ok = this.h.onBuy('rate');
       if (ok) this._pop(this.el.rateBtn);
@@ -183,15 +188,7 @@ export class UI {
       p.querySelector('.pad-lv').textContent = info.lvl ? 'Lv.' + info.lvl : '';
       p.classList.toggle('ready', info.canBuy);
     }
-    if (machines) {
-      const cd = machines.manualCd > 0;
-      this.el.assist.classList.toggle('cd', cd);
-    }
     this.renderSheet(false);
-  }
-
-  setAssistProgress(p) {
-    this.el.assist.querySelector('.sh-cd').style.transform = 'scaleX(' + p.toFixed(3) + ')';
   }
 
   // ---------- floating cash ----------
