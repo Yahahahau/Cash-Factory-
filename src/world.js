@@ -523,10 +523,6 @@ export class World {
       this._geos.push(field.geometry);
       field.position.set((gd.x0 + gd.x1) / 2, (gd.y0 + gd.y1) / 2, 0.4);
       gg.add(field);
-      const lab = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.31), new THREE.MeshBasicMaterial({ map: labelTex('x2', '#1f9a3c', '#ffffff') }));
-      this._geos.push(lab.geometry);
-      lab.position.set((gd.x0 + gd.x1) / 2, (gd.y0 + gd.y1) / 2, 0.46);
-      gg.add(lab);
       g.add(gg);
       V.gates.push({ def: gd, field });
     }

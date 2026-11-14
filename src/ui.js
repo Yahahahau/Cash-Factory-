@@ -79,6 +79,15 @@ export class UI {
       this.el.labels.appendChild(el);
       this.labels.push({ id: l.id, el, x: l.x, y: l.y, b: el.querySelector('b'), em: el.querySelector('em') });
     }
+    // "x2" badges for multiplier gates are plain DOM so the pixel shader never touches them
+    this.gateLbls = [];
+    for (const g of def.gates || []) {
+      const el = document.createElement('div');
+      el.className = 'gatelbl';
+      el.textContent = '×2';
+      this.el.labels.appendChild(el);
+      this.gateLbls.push({ el, x: (g.x0 + g.x1) / 2, y: (g.y0 + g.y1) / 2 });
+    }
     this.cache.stageTitle = null;
     this.updateLabels();
   }
@@ -99,6 +108,10 @@ export class UI {
 
   placeLabels(w, h) {
     if (!this.world) return;
+    for (const l of this.gateLbls || []) {
+      const p = this.world.project(l.x, l.y, 0.5, w, h);
+      l.el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -50%)`;
+    }
     for (const l of this.labels) {
       const p = this.world.project(l.x, l.y, 0.7, w, h);
       l.el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) translate(-50%, -50%)`;

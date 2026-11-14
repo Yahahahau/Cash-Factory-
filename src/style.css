@@ -67,6 +67,7 @@ button { font-family: inherit; color: inherit; cursor: pointer; border: 0; paddi
 
 /* ---- platform price labels ---- */
 .plabel { position: absolute; left: 0; top: 0; pointer-events: auto; display: flex; align-items: center; gap: 6px; padding: 5px 9px; min-width: 62px; background: linear-gradient(#5b6068, #484c54); color: #fff; box-shadow: 0 0 0 2px #25282e, inset 0 0 0 2px #70757e, 0 3px 0 2px #25282e; font-family: var(--px); white-space: nowrap; will-change: transform; }
+.gatelbl { position: absolute; left: 0; top: 0; pointer-events: none; padding: 3px 9px; font-family: var(--px); font-size: 16px; color: #fff; background: #1f9a3c; box-shadow: 0 0 0 2px #0d3a1a, inset 0 0 0 2px #6fe58c, 0 2px 0 2px #0d3a1a; text-shadow: 2px 2px 0 #0d3a1a; will-change: transform; }
 .plabel .cur { color: #3fe86a; font-size: 12px; text-shadow: 1px 1px 0 #0d3a1a; }
 .plabel b { font-size: 11px; text-shadow: 1px 1px 0 #25282e; }
 .plabel em { position: absolute; right: 2px; bottom: -11px; font-style: normal; font-size: 7px; color: #ffe066; text-shadow: 1px 1px 0 #25282e; }
