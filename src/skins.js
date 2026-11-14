@@ -43,6 +43,25 @@ export function installSkins() {
   const sk = buildSkins();
   const root = document.documentElement.style;
   for (const [name, url] of Object.entries(sk)) root.setProperty('--sk-' + name, `url("${url}")`);
+  installCircles();
   document.documentElement.classList.add('skins');
   return sk;
+}
+
+// stepped (pixel) circle as a clip-path polygon: N x N grid, radius N/2, one pixel per grid cell
+function circlePoly(N) {
+  const r = N / 2, pts = [];
+  const hw = (y) => Math.round(Math.sqrt(Math.max(0, r * r - (y + 0.5 - r) ** 2)));
+  const right = [], left = [];
+  for (let y = 0; y < N; y++) {
+    const w = hw(y);
+    right.push([r + w, y], [r + w, y + 1]);
+    left.unshift([r - w, y + 1], [r - w, y]);
+  }
+  for (const [x, y] of right.concat(left)) pts.push(`${((x / N) * 100).toFixed(3)}% ${((y / N) * 100).toFixed(3)}%`);
+  return `polygon(${pts.join(',')})`;
+}
+export function installCircles() {
+  const root = document.documentElement.style;
+  for (const n of [28, 26, 22]) root.setProperty('--cl-' + n, circlePoly(n));
 }

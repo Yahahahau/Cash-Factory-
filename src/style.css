@@ -105,13 +105,12 @@ button { font-family: inherit; color: inherit; cursor: pointer; border: 0; paddi
 .rate-btn.ready { background: linear-gradient(#3d86ff, #2563d8); box-shadow: 0 0 0 2px #14336e, inset 0 0 0 2px #7fb0ff, 0 3px 0 2px #14336e; }
 .rate-btn:active { transform: translateY(2px); }
 .lv-badge { position: absolute; right: -6px; top: -10px; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; background: #2f8cff; color: #fff; font-style: normal; font-family: var(--px); font-size: 9px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px #14336e; }
-.pop { animation: pop 0.45s cubic-bezier(.3,1.4,.5,1); }
-@keyframes pop { 0% { transform: scale(1); } 35% { transform: scale(1.22); filter: brightness(1.4); } 60% { transform: scale(0.92); } 80% { transform: scale(1.05); } 100% { transform: scale(1); } }
-.bump { animation: bump 0.32s cubic-bezier(.3,1.6,.5,1); }
-@keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.18); } 100% { transform: scale(1); } }
-.drop, .rate-btn, .pad { transition: transform 0.18s cubic-bezier(.3,1.7,.5,1); }
+.pop { animation: pop 0.4s steps(8); }
+@keyframes pop { 0% { transform: translateY(0); } 30% { transform: translateY(-4px); filter: brightness(1.35); } 60% { transform: translateY(2px); } 80% { transform: translateY(-1px); } 100% { transform: translateY(0); } }
+.bump { animation: bump 0.3s steps(6); }
+@keyframes bump { 0% { transform: translateY(0); } 40% { transform: translateY(-3px); } 100% { transform: translateY(0); } }
 .plabel.ready { animation: ready 1.2s ease-in-out infinite; }
-@keyframes ready { 0%,100% { scale: 1; filter: none; } 50% { scale: 1.08; filter: brightness(1.18); } }
+@keyframes ready { 0%,100% { filter: none; } 50% { filter: brightness(1.22); } }
 
 /* ---- contextual upgrade panel ---- */
 #sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 12; display: flex; justify-content: center; padding: 0 8px calc(8px + env(safe-area-inset-bottom)); pointer-events: none; }
@@ -214,7 +213,7 @@ input[type='range'] { width: 130px; accent-color: var(--yellow); height: 28px; }
 .skins .rate { padding: 0 2px 2px; width: 172px; }
 .skins .rate-btn { border: 8px solid transparent; border-image: var(--sk-grey) 4 fill / 8px / 0 stretch; background: none; box-shadow: none; height: 44px; margin-top: 4px; image-rendering: pixelated; }
 .skins .rate-btn.ready { border-image-source: var(--sk-blue); background: none; box-shadow: none; }
-.skins .lv-badge { border-radius: 0; background: var(--yellow); color: #3a2600; box-shadow: 0 0 0 2px #3c2200, inset -2px -2px 0 #e0a010; right: -4px; top: -14px; clip-path: polygon(0 2px, 2px 2px, 2px 0, calc(100% - 2px) 0, calc(100% - 2px) 2px, 100% 2px, 100% calc(100% - 2px), calc(100% - 2px) calc(100% - 2px), calc(100% - 2px) 100%, 2px 100%, 2px calc(100% - 2px), 0 calc(100% - 2px)); }
+.skins .lv-badge { border-radius: 0; background: var(--yellow); color: #3a2600; box-shadow: 0 0 0 2px #3c2200, inset -2px -2px 0 #e0a010; right: 12px; top: -26px; clip-path: polygon(0 2px, 2px 2px, 2px 0, calc(100% - 2px) 0, calc(100% - 2px) 2px, 100% 2px, 100% calc(100% - 2px), calc(100% - 2px) calc(100% - 2px), calc(100% - 2px) 100%, 2px 100%, 2px calc(100% - 2px), 0 calc(100% - 2px)); }
 .skins .pbar { height: 32px; padding: 0; border: 8px solid transparent; border-image: var(--sk-dark) 4 fill / 8px / 0 stretch; background: none; box-shadow: none; image-rendering: pixelated; width: min(206px, 100%); overflow: hidden; }
 .skins .pbar i { background: linear-gradient(#8bff9f 0 35%, #3fe05a 35% 70%, #25a845 70%); }
 .skins .plabel, .skins .pad { border: 8px solid transparent; border-image: var(--sk-grey) 4 fill / 8px / 0 stretch; background: none; box-shadow: none; image-rendering: pixelated; padding: 0 2px; min-width: 0; }
@@ -328,3 +327,13 @@ input[type='range'] { width: 130px; accent-color: var(--yellow); height: 28px; }
 .rv-time { font-family: var(--px); font-size: 16px; color: #fff; margin: 4px 0; }
 .big-btn:disabled { cursor: default; }
 @media (prefers-reduced-motion: reduce) { .mini-btn canvas, .pxcanvas, .run-btn, .chip.boost, .mini-dot, .mhint { animation: none; } }
+
+/* ---- pixel-circle drop button: stepped circle outlines built with clip-path polygons (set by skins.js) ---- */
+.skins .drop { width: 84px; height: 84px; border-radius: 0; overflow: visible; background: #2a3248; box-shadow: none; clip-path: var(--cl-28); display: block; padding: 0; image-rendering: pixelated; }
+.skins .drop::before { content: ''; position: absolute; inset: 3px; background: #c8d0e2; clip-path: var(--cl-26); }
+.skins .drop::after { content: ''; position: absolute; inset: 9px; background: #3a2a0c; clip-path: var(--cl-22); box-shadow: none; }
+.skins .drop .dropin { position: absolute; inset: 9px; clip-path: var(--cl-22); z-index: 1; display: flex; align-items: center; justify-content: center; }
+.skins .drop .fill { transition: height 0.2s steps(5); }
+.skins .drop b { margin-top: -6px; }
+.skins .drop:active, .skins .drop.press { transform: translateY(3px); box-shadow: none; }
+.skins .drop.press { animation: none; }
