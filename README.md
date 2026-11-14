@@ -72,7 +72,7 @@ npm run test:physics   # ฟิสิกส์ Rapier + ลูปเกมแบ
 ```
 src/economy.js   สูตรเศรษฐกิจ/เกรด/ออฟไลน์ (ไม่พึ่ง DOM)   src/save.js    เซฟ/โหลด
 src/physics.js   Rapier + object pool                       src/world.js   ฉาก Three.js + เอฟเฟกต์ตามเกรด
-src/pixel.js     พิกเซลโพสต์โปรเซส                          src/ui.js      UI ภาษาไทย
+src/pixel.js     พิกเซลโพสต์โปรเซส                          src/ui.js      UI แบบ Windows XP Luna (อังกฤษทั้งหมด)
 src/game.js      ลูปเกม ผลิต/เก็บ/เงิน                       src/embed.js   iframe + อัปเดตอัตโนมัติ
 ```
 
@@ -93,5 +93,5 @@ src/game.js      ลูปเกม ผลิต/เก็บ/เงิน      
 - **ราคาไดนามิก**: `ราคา = base × ตัวคูณรัน × growth^เลเวล × ตัวคูณกระเป๋าเงิน` ตัวคูณกระเป๋าเงินเป็น tier (ครึ่งหลัก log10 ของเงิน เริ่มที่ $100) ขึ้นอย่างเดียวในหนึ่งรัน มีเพดาน ค่าทั้งหมดอยู่ที่ `ECON` ใน `src/economy.js`
 - **Flying Ball**: ปุ่มมุมขวาล่าง (โหลดโค้ดเกมเมื่อกดเล่นเท่านั้น) ผ่านประตูตามเป้าหมายจึงสุ่มตัวคูณ ×2/×4/×16/×64/×256 (55/28/12/4/1% ปรับได้ที่ `ECON.mini.rewards`) บูสต์ 20 นาที แล้วคูลดาวน์ 30 นาที ใช้ timestamp ที่เซฟไว้ รีเฟรชไม่รีเซ็ต และผลแต่ละรอบจ่ายได้ครั้งเดียว
 - **รายได้**: ทุกการเก็บเหรียญ/ออฟไลน์ผ่าน `E.income()` จุดเดียว บูสต์ไม่คูณเพชร ราคาอัปเกรด รางวัลผ่านด่าน หรือเงินที่มีอยู่
-- **UI พิกเซล**: skin 9-slice สร้างใน `src/skins.js` (ขอบหยักเป็นขั้น, `image-rendering: pixelated`), สไปรต์ลูกบอลใน `src/sprites.js`, หน้าจอต่างๆ ใน `src/screens.js`
+- **UI แบบ Windows XP Luna**: คอมโพเนนต์/WindowManager/Taskbar/Start menu/Notification ใน `src/xp.js`, หน้าต่างอัปเกรด+ตั้งค่าใน `src/xp-panels.js`, หน้าจอเกมใน `src/screens.js`, ไอคอน SVG ใน `src/icons.js`, tokens + animation ใน `src/style.css`, ฟอนต์ `src/fonts/windows-xp.otf` (ใช้ฟอนต์นี้ฟอนต์เดียว)
 - เวลา: ไม่มีบริการเวลาฝั่งเซิร์ฟเวอร์ใน Rezona จึงใช้เวลาเครื่อง ถ้านาฬิกาถูกย้อนหลังจะเลื่อนเวลาหมดอายุตามเพื่อไม่ให้ได้เวลาเพิ่ม

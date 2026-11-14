@@ -26,12 +26,12 @@ export const HEAD = { hy: 0.3, hz: 0.44, hw: 0.14 };
 
 // background / material palettes, one per stage (cycled)
 export const PALETTES = [
-  { name: 'เทา', edge: 0x050607, mid: 0xd9dce2, tint: 0xffffff, accent: 0xffd23f },
-  { name: 'น้ำเงิน', edge: 0x16358f, mid: 0x6f93e6, tint: 0xeef4ff, accent: 0xffd23f },
-  { name: 'ม่วง', edge: 0x40298f, mid: 0x9a7de0, tint: 0xf4eeff, accent: 0xffd23f },
-  { name: 'ชมพู', edge: 0x80304e, mid: 0xe68fb0, tint: 0xfff0f6, accent: 0xfff06a },
-  { name: 'เขียวน้ำทะเล', edge: 0x0b5560, mid: 0x5cd0c4, tint: 0xeafffb, accent: 0xffe066 },
-  { name: 'ส้ม', edge: 0x7e3510, mid: 0xf0a560, tint: 0xfff3e4, accent: 0xfff06a },
+  { name: 'Grey', edge: 0x050607, mid: 0xd9dce2, tint: 0xffffff, accent: 0xffd23f },
+  { name: 'Blue', edge: 0x16358f, mid: 0x6f93e6, tint: 0xeef4ff, accent: 0xffd23f },
+  { name: 'Purple', edge: 0x40298f, mid: 0x9a7de0, tint: 0xf4eeff, accent: 0xffd23f },
+  { name: 'Pink', edge: 0x80304e, mid: 0xe68fb0, tint: 0xfff0f6, accent: 0xfff06a },
+  { name: 'Teal', edge: 0x0b5560, mid: 0x5cd0c4, tint: 0xeafffb, accent: 0xffe066 },
+  { name: 'Orange', edge: 0x7e3510, mid: 0xf0a560, tint: 0xfff3e4, accent: 0xfff06a },
 ];
 
 const LETTERS = 'ABCDEF';
@@ -156,5 +156,5 @@ export const JAM = {
   grace: 3.5, // seconds a helped coin is left alone
   pistonCooldown: 3.0,
   globalCooldown: 1.2,
-  manualCooldown: 8.0, // "ช่วยดัน" button
+  manualCooldown: 8.0, // "assist" button
 };

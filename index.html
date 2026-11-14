@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="th">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#10131f" />
+  <meta name="theme-color" content="#245edb" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>PIXEL COIN PUSHER</title>
@@ -11,45 +11,58 @@
 </head>
 <body>
   <div id="app">
-    <div id="stage">
-      <div id="scene">
-        <canvas id="c"></canvas>
-        <div id="labels"></div>
-        <div id="floats"></div>
-        <div id="hud">
-          <div class="leftcol"><button id="menuBtn" class="round-btn" aria-label="เมนู"><i></i><i></i><i></i></button><button id="runBtn" class="run-btn hidden" aria-label="เริ่มรันใหม่">NEW<br>RUN</button></div>
-          <div class="stage-box">
-            <div class="stage-title" id="stageTitle">ด่าน 1</div>
-            <div class="pbar"><i id="pFill"></i><span id="pText">0 / 50</span></div>
-            <div class="chips"><span class="chip" id="runChip">รัน 1</span><span class="chip boost hidden" id="boostChip"></span></div>
+    <div id="work">
+      <div id="stage">
+        <div id="scene">
+          <canvas id="c"></canvas>
+          <div id="labels"></div>
+          <div id="floats"></div>
+          <div id="hud">
+            <div class="hudtop">
+              <section class="hudwin hud-stage" aria-label="Stage">
+                <div class="ht"><span id="stageTitle">Stage 1</span></div>
+                <div class="hb">
+                  <div class="xpprog" id="pBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="pFill"></i><span id="pText">0 / 50</span></div>
+                  <div class="line"><span id="runChip">Run 1</span><span>Profit <b id="profitMult">x1.00</b></span></div>
+                  <div class="line boostline hidden" id="boostChip" role="button" tabindex="0"></div>
+                  <div class="line"><span id="combo"></span></div>
+                </div>
+              </section>
+              <section class="hudwin hud-wallet" aria-label="Wallet">
+                <div class="ht"><span>Wallet</span></div>
+                <div class="hb">
+                  <div class="wrow cash" id="cashRow"><span class="wi" data-ico="coin"></span><b id="cash">10</b></div>
+                  <div class="wrow" id="gemRow"><span class="wi" data-ico="gem"></span><b id="gems">0</b></div>
+                </div>
+              </section>
+            </div>
+            <button id="runBtn" class="xpbtn green hidden" aria-label="Start a new run"><span>New Run</span></button>
+            <div id="rightcol">
+              <button id="padCap" class="xpbtn pad" data-key="capacity"><span class="pad-name">Capacity</span><b class="pad-price">$40</b><em class="pad-lv"></em></button>
+              <button id="padRare" class="xpbtn pad" data-key="rare"><span class="pad-name">Rare</span><b class="pad-price">$80</b><em class="pad-lv"></em></button>
+            </div>
+            <div class="hudbot">
+              <button id="miniBtn" class="xpbtn" aria-label="Flying Ball"><canvas id="miniIco" width="20" height="16"></canvas><span class="mt"><span id="miniTxt">Play</span><small id="miniSub">Flying Ball</small></span><i class="nd"></i></button>
+              <section class="hudwin rate" id="ratePanel" aria-label="Coin rate">
+                <div class="ht"><span>Coins/s</span><span style="margin-left:auto" id="rateLv">Lv.0</span></div>
+                <div class="hb"><div class="rrow"><span>Rate</span><b id="rateInfo">0.5/s</b></div><button id="rateBtn" class="xpbtn"><span>Upgrade</span><b id="ratePrice" class="pad-price">$3</b></button></div>
+              </section>
+              <button id="dropBtn" class="xpbtn" aria-label="Drop coins"><span class="dtop"><span class="wi" data-ico="drop"></span><span>Drop</span><b id="charges">3</b></span><span class="xpprog thin"><i id="dropFill"></i></span></button>
+            </div>
           </div>
-          <div class="cash-col">
-            <div class="cash-box"><span class="cur">$</span><b id="cash">10</b></div>
-            <div class="gem-box"><span class="gem"></span><b id="gems">0</b></div>
-            <div class="combo" id="combo"></div>
-          </div>
+          <div id="flash"></div>
         </div>
-        <div id="rightcol">
-          <button id="padCap" class="pad" data-key="capacity"><span class="pad-ico cap"></span><span class="pad-name">ความจุ</span><b class="pad-price">$40</b><em class="pad-lv"></em></button>
-          <button id="padRare" class="pad" data-key="rare"><span class="pad-ico rare"></span><span class="pad-name">หายาก</span><b class="pad-price">$80</b><em class="pad-lv"></em></button>
-        </div>
-        <button id="miniBtn" class="mini-btn" aria-label="Flying Ball"><canvas id="miniIco" width="20" height="16"></canvas><span id="miniTxt">เล่น</span><i class="mini-dot"></i></button>
-        <button id="dropBtn" class="drop" aria-label="ปล่อยเหรียญ"><span class="dropin"><i class="fill" id="dropFill"></i><b id="charges">3</b><span class="drop-lbl">ปล่อย</span></span></button>
-        <div id="ratePanel" class="rate">
-          <div class="rate-top"><span class="rate-title">เหรียญ/วิ</span><span class="rate-info" id="rateInfo">0.5/วิ</span></div>
-          <button id="rateBtn" class="rate-btn"><span class="cur">$</span><b id="ratePrice">3</b></button>
-          <em class="lv-badge" id="rateLv">0</em>
-        </div>
-        <div id="sheet" class="hidden"></div>
-        <div id="flash"></div>
-        <div id="banner"><div class="b-small" id="bannerSmall">ผ่านด่านแล้ว!</div><div class="b-big" id="bannerTitle"></div><div class="b-sub" id="bannerSub"></div></div>
-        <div id="toast"></div>
       </div>
-      <div id="modal" class="hidden"></div>
-      <div id="miniHost"></div>
-      <div id="loading"><div class="ld-title">PIXEL<br />COIN PUSHER</div><div class="ld-bar"><i></i></div><div class="ld-sub">กำลังโหลด…</div></div>
+      <div id="desktop"></div>
+      <div id="notifs" aria-live="polite"></div>
+      <div id="loading"><div class="ld-title"><small>Pixel</small>COIN PUSHER</div><div class="xpprog indet"><i></i></div><div class="ld-sub">Loading...</div></div>
+    </div>
+    <div id="taskbar">
+      <button id="startBtn" aria-haspopup="menu"><span class="wi" data-ico="coin"></span>start</button>
+      <div id="tasks"></div>
+      <div id="tray"><button id="boostTray" class="hidden" aria-label="Profit boost"><span class="wi" data-ico="boost"></span><span id="trayTxt"></span></button><span id="clock">12:00</span></div>
     </div>
   </div>
-  <script type="module" src="/src/main.js"></script>
+<script type="module" src="/src/main.js"></script>
 </body>
 </html>

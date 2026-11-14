@@ -9,7 +9,6 @@ import { GameAudio } from './audio.js';
 import { UI } from './ui.js';
 import { Game } from './game.js';
 import { Embed, BUILD_ID, inIframe } from './embed.js';
-import { installSkins } from './skins.js';
 import { showReward, openNewRun } from './screens.js';
 
 const QUALITY = {
@@ -24,14 +23,13 @@ async function boot() {
   try {
     await Promise.all([
       loadRapier(),
-      document.fonts ? Promise.all([document.fonts.load('12px "Press Start 2P"'), document.fonts.load('700 14px Sarabun')]).catch(() => {}) : null,
+      document.fonts ? document.fonts.load('12px "Windows XP"').catch(() => {}) : null,
     ]);
   } catch (e) {
-    loadingSub.textContent = 'โหลดเอนจินฟิสิกส์ไม่สำเร็จ กรุณารีเฟรช';
+    loadingSub.textContent = 'Could not load the physics engine. Please refresh.';
     throw e;
   }
 
-  installSkins();
   let { state, fresh } = Save.load();
   E.normalizeClock(state, Date.now());
   const canvas = document.getElementById('c');
@@ -41,7 +39,7 @@ async function boot() {
   try {
     world = new World(canvas, { maxBodies: MAX_BODIES, particles: 200 });
   } catch (e) {
-    loadingSub.textContent = 'อุปกรณ์นี้ไม่รองรับ WebGL';
+    loadingSub.textContent = 'This device does not support WebGL.';
     throw e;
   }
   const physics = new Physics(MAX_BODIES);
@@ -63,11 +61,11 @@ async function boot() {
     onBuy: (key) => {
       audio.unlock();
       const info = E.upgradeInfo(state, key);
-      if (info.atMax) { ui.toast('ถึงระดับสูงสุดแล้ว', 1200); return false; }
-      if (!E.buyUpgrade(state, key)) { audio.deny(); ui.toast('เงินไม่พอ', 1100); return false; }
+      if (info.atMax) { ui.toast('Already at maximum level.', 1500, { title: 'Upgrade', icon: 'warn' }); return false; }
+      if (!E.buyUpgrade(state, key)) { audio.deny(); ui.toast('Not enough cash.', 1500, { title: 'Upgrade', icon: 'warn' }); return false; }
       audio.buy();
       world.particles.emit(0, 8, 1, 14, { color: [0xffe066, 0x66f7ff, 0xffffff], speed: 3.5, life: 0.7, gravity: 5, size: 0.14, up: 0.9 });
-      if (info.isMachine && info.lvl === 0) ui.toast(E.MACHINES[key].name + ' เปิดใช้งานแล้ว!', 1800);
+      if (info.isMachine && info.lvl === 0) ui.toast(E.MACHINES[key].name + ' installed!', 2000, { title: 'Upgrade', icon: 'check' });
       if (key === 'capacity') game.charges = Math.min(E.maxCharges(state), game.charges);
       doSave();
       return true;
@@ -94,7 +92,7 @@ async function boot() {
       game.reset(state);
       ui.state = state;
       doSave();
-      ui.toast('รีเซ็ตความคืบหน้าแล้ว');
+      ui.toast('Progress has been reset.', 2400, { title: 'Reset' });
     },
     onCheckUpdate: () => embed.check(true),
     // ----- Flying Ball -----
@@ -103,7 +101,7 @@ async function boot() {
     onReveal: () => { audio.grade(); },
     // ----- runs -----
     onNewRunOpen: () => {
-      if (!E.canNewRun(state)) { ui.toast('ปลดล็อกที่ด่าน ' + E.ECON.run.minStage, 1600); return; }
+      if (!E.canNewRun(state)) { ui.toast('New Run unlocks at stage ' + E.ECON.run.minStage + '.', 2200, { title: 'New Run', icon: 'flag' }); return; }
       openNewRun(ui, state, E.previewNewRun(state), ui.h);
     },
     onNewRun: () => {
@@ -114,10 +112,10 @@ async function boot() {
       doSave();
       audio.grade();
       ui.flash();
-      ui.toast(`รันที่ ${state.run} เริ่มแล้ว · เงินเริ่มต้น ${E.fmtMoney(state.cash)} · รายได้ถาวร ×${E.permMult(state).toFixed(2)}`, 3400);
+      ui.toast(`Run ${state.run} started. Starting cash ${E.fmtMoney(state.cash)}, permanent income x${E.permMult(state).toFixed(2)}.`, 3600, { title: 'New Run', icon: 'flag' });
       void pv;
     },
-    onModal: () => {},
+    getFps: () => Math.round(1000 / Math.max(1, ema)),
   });
   ui.state = state;
   ui.world = world;
@@ -128,13 +126,14 @@ async function boot() {
   async function startMini() {
     audio.unlock();
     const ses = E.startMini(state);
-    if (!ses) { ui.toast('ยังเล่นไม่ได้ (บูสต์/คูลดาวน์)', 1600); ui.closeModal(); return; }
+    if (!ses) { ui.toast('Flying Ball is not available right now (boost or cooldown).', 2400, { title: 'Flying Ball', icon: 'warn' }); ui.closeModal(); return; }
     doSave();
     ui.closeModal();
     miniOpen = true;
     const { FlyView } = await import('./flyball.js');
     lastReward = null;
-    const view = new FlyView(ui.el.miniHost, {
+    const view = new FlyView(null, {
+      wm: ui.wm,
       objective: ses.objective,
       best: state.mini.best,
       audio,
@@ -142,7 +141,7 @@ async function boot() {
         const r = E.finishMini(state, result);
         if (r.ok) { lastReward = r; ui.updateMini(state); }
         const na = E.checkAchievements(state);
-        if (na.length) ui.toast('ความสำเร็จใหม่: ' + na.map((id) => E.ACHIEVEMENTS[id].name).join(', '), 2600);
+        if (na.length) ui.toast(na.map((id) => E.ACHIEVEMENTS[id].name).join(', '), 3000, { title: 'Achievement unlocked', icon: 'trophy' });
         doSave(); // settle + persist at once: a refresh can never replay this result
         return { ...r, best: state.mini.best };
       },
@@ -269,7 +268,7 @@ async function boot() {
     onResume: resume,
     onQuality: (v) => ui.h.onSetting('quality', v),
     onBeforeReload: doSave,
-    onUpdateAvailable: () => ui.toast('มีเวอร์ชันใหม่ กำลังอัปเดตอัตโนมัติ…', 2600),
+    onUpdateAvailable: () => ui.toast('A new version is available. Updating automatically...', 2800, { title: 'Update', icon: 'disk' }),
   });
 
   // ---------- main loop ----------
@@ -296,11 +295,11 @@ async function boot() {
       const now = Date.now();
       if (now < lastNow - 2000) E.normalizeClock(state, now, lastNow); // clock moved backwards: keep remaining times
       lastNow = now;
-      ui.slowUpdate(state, machines);
+      ui.slowUpdate(state);
       const had = state.perm.unlocks.length;
       const na = E.checkAchievements(state);
-      if (state.perm.unlocks.length > had) ui.toast('ปลดล็อก: เริ่มรันใหม่ (ปุ่ม NEW RUN)', 3000);
-      if (na.length) ui.toast('ความสำเร็จใหม่: ' + na.map((id) => E.ACHIEVEMENTS[id].name).join(', '), 2600);
+      if (state.perm.unlocks.length > had) ui.toast('New Run is now available (New Run button).', 3200, { title: 'Unlocked', icon: 'flag' });
+      if (na.length) ui.toast(na.map((id) => E.ACHIEVEMENTS[id].name).join(', '), 3000, { title: 'Achievement unlocked', icon: 'trophy' });
     }
     autoSave += dt;
     if (autoSave >= 5) { autoSave = 0; doSave(); }
@@ -316,14 +315,14 @@ async function boot() {
       lowFpsTime = 0;
       const next = state.settings.quality === 'high' ? 'medium' : 'low';
       ui.h.onSetting('quality', next);
-      ui.toast('ลดคุณภาพกราฟิกอัตโนมัติเพื่อความลื่นไหล');
+      ui.toast('Graphics quality lowered automatically for smoother play.', 3200, { title: 'Performance', icon: 'speed' });
     }
   }
 
   applySize();
   if (!fresh) applyOffline();
   doSave();
-  ui.slowUpdate(state, machines);
+  ui.slowUpdate(state);
   document.fonts && document.fonts.ready.then(() => {});
   requestAnimationFrame(frame);
   ui.hideLoading();
@@ -336,5 +335,5 @@ async function boot() {
 boot().catch((e) => {
   console.error(e);
   const sub = document.querySelector('.ld-sub');
-  if (sub && !sub.textContent.includes('ไม่')) sub.textContent = 'เกิดข้อผิดพลาด: ' + (e && e.message ? e.message : e);
+  if (sub && !/Could not|not support/.test(sub.textContent)) sub.textContent = 'Error: ' + (e && e.message ? e.message : e);
 });

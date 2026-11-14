@@ -42,33 +42,33 @@ export const ECON = {
 
 // coin types: 0 bronze, 1 silver, 2 gold, 3 rare (crystal coin, also pays 1 gem)
 export const COIN_VALUES = [1, 3, 10, 25];
-export const COIN_NAMES = ['เหรียญทองแดง', 'เหรียญเงิน', 'เหรียญทอง', 'เหรียญหายาก'];
+export const COIN_NAMES = ['Bronze coin', 'Silver coin', 'Gold coin', 'Rare crystal'];
 
 // ---- machines (levels are per machine id and persist across stages) -------
 export const MACHINE_TYPES = {
-  pusher: { name: 'ลูกสูบดันเหรียญ', base: 5, growth: 1.5, max: 12 },
-  conveyor: { name: 'สายพานลำเลียง', base: 20, growth: 1.55, max: 10 },
-  blower: { name: 'พัดลมเป่าลม', base: 25, growth: 1.55, max: 10 },
-  magnet: { name: 'แม่เหล็กดูดเหรียญ', base: 40, growth: 1.6, max: 10 },
-  launcher: { name: 'เครื่องดีดเหรียญ', base: 50, growth: 1.6, max: 10 },
+  pusher: { name: 'Coin Piston', base: 5, growth: 1.5, max: 12 },
+  conveyor: { name: 'Conveyor Belt', base: 20, growth: 1.55, max: 10 },
+  blower: { name: 'Blower Fan', base: 25, growth: 1.55, max: 10 },
+  magnet: { name: 'Coin Magnet', base: 40, growth: 1.6, max: 10 },
+  launcher: { name: 'Coin Launcher', base: 50, growth: 1.6, max: 10 },
 };
 export const MACHINES = {
-  pusherA: { type: 'pusher', mult: 1, name: 'ลูกสูบ A' },
-  pusherB: { type: 'pusher', mult: 1, name: 'ลูกสูบ B' },
-  pusherC: { type: 'pusher', mult: 2, name: 'ลูกสูบ C' },
-  pusherD: { type: 'pusher', mult: 3, name: 'ลูกสูบ D' },
-  conv1: { type: 'conveyor', mult: 1, name: 'สายพาน' },
-  fan1: { type: 'blower', mult: 1, name: 'พัดลมเป่าลม' },
-  magnet1: { type: 'magnet', mult: 1, name: 'แม่เหล็ก' },
-  launch1: { type: 'launcher', mult: 1, name: 'เครื่องดีด' },
+  pusherA: { type: 'pusher', mult: 1, name: 'Piston A' },
+  pusherB: { type: 'pusher', mult: 1, name: 'Piston B' },
+  pusherC: { type: 'pusher', mult: 2, name: 'Piston C' },
+  pusherD: { type: 'pusher', mult: 3, name: 'Piston D' },
+  conv1: { type: 'conveyor', mult: 1, name: 'Conveyor' },
+  fan1: { type: 'blower', mult: 1, name: 'Blower Fan' },
+  magnet1: { type: 'magnet', mult: 1, name: 'Magnet' },
+  launch1: { type: 'launcher', mult: 1, name: 'Launcher' },
 };
 export const MACHINE_IDS = Object.keys(MACHINES);
 
 // ---- global upgrades ------------------------------------------------------
 export const GLOBALS = {
-  rate: { name: 'เหรียญ/วินาที', base: 3, growth: 1.17, max: 80 },
-  capacity: { name: 'ความจุเหรียญสูงสุด', base: 40, growth: 1.34, max: 20 },
-  rare: { name: 'โอกาสเหรียญหายาก', base: 80, growth: 1.42, max: 15 },
+  rate: { name: 'Coins per second', base: 3, growth: 1.17, max: 80 },
+  capacity: { name: 'Max coins on field', base: 40, growth: 1.34, max: 20 },
+  rare: { name: 'Rare coin chance', base: 80, growth: 1.42, max: 15 },
 };
 
 export function newState() {
@@ -240,27 +240,27 @@ const f1 = (n) => (n >= 100 ? n.toFixed(0) : n.toFixed(1));
 // text describing what the next level changes
 export function effectText(s, key) {
   const info = upgradeInfo(s, key);
-  if (info.atMax) return 'ระดับสูงสุดแล้ว';
+  if (info.atMax) return 'Maximum level reached';
   const L = info.lvl;
   if (!info.isMachine) {
-    if (key === 'rate') return `ปล่อยเหรียญ ${f1(0.45 + 0.3 * L)} → ${f1(0.45 + 0.3 * (L + 1))} เหรียญ/วินาที`;
-    if (key === 'capacity') return `เหรียญพร้อมกัน ${30 + 8 * L} → ${30 + 8 * (L + 1)} · ปุ่มปล่อยเก็บได้ ${3 + Math.floor(L / 3)} → ${3 + Math.floor((L + 1) / 3)}`;
+    if (key === 'rate') return `Spawn rate ${f1(0.45 + 0.3 * L)} → ${f1(0.45 + 0.3 * (L + 1))} coins/s`;
+    if (key === 'capacity') return `Coins on field ${30 + 8 * L} → ${30 + 8 * (L + 1)} · Drop charges ${3 + Math.floor(L / 3)} → ${3 + Math.floor((L + 1) / 3)}`;
     const a = typeProbabilities(s)[3] * 100;
     const n = JSON.parse(JSON.stringify(s));
     n.levels.rare += 1;
-    return `เหรียญหายาก ${a.toFixed(1)}% → ${(typeProbabilities(n)[3] * 100).toFixed(1)}%`;
+    return `Rare coins ${a.toFixed(1)}% → ${(typeProbabilities(n)[3] * 100).toFixed(1)}%`;
   }
   const type = MACHINES[key].type;
   if (type === 'pusher') {
     const a = pusherParams(L), b = pusherParams(L + 1);
-    return L === 0 ? `เปิดใช้งาน: ดันทุก ${f1(b.interval)} วิ` : `ดันทุก ${f1(a.interval)} → ${f1(b.interval)} วิ · เร็วขึ้น`;
+    return L === 0 ? `Activates: pushes every ${f1(b.interval)} s` : `Push interval ${f1(a.interval)} → ${f1(b.interval)} s`;
   }
-  if (type === 'conveyor') return L === 0 ? `เปิดใช้งาน: ความเร็ว ${f1(conveyorSpeed(1))} ม./วิ` : `ความเร็ว ${f1(conveyorSpeed(L))} → ${f1(conveyorSpeed(L + 1))} ม./วิ`;
-  if (type === 'blower') return L === 0 ? `เปิดใช้งาน: แรงลม ${f1(blowerForce(1))}` : `แรงลม ${f1(blowerForce(L))} → ${f1(blowerForce(L + 1))}`;
-  if (type === 'magnet') return L === 0 ? `เปิดใช้งาน: แรงดูด ${f1(magnetForce(1))}` : `แรงดูด ${f1(magnetForce(L))} → ${f1(magnetForce(L + 1))}`;
+  if (type === 'conveyor') return L === 0 ? `Activates: speed ${f1(conveyorSpeed(1))} m/s` : `Speed ${f1(conveyorSpeed(L))} → ${f1(conveyorSpeed(L + 1))} m/s`;
+  if (type === 'blower') return L === 0 ? `Activates: air force ${f1(blowerForce(1))}` : `Air force ${f1(blowerForce(L))} → ${f1(blowerForce(L + 1))}`;
+  if (type === 'magnet') return L === 0 ? `Activates: pull ${f1(magnetForce(1))}` : `Pull ${f1(magnetForce(L))} → ${f1(magnetForce(L + 1))}`;
   if (type === 'launcher') {
     const b = launcherParams(L + 1);
-    return L === 0 ? `เปิดใช้งาน: ดีดแรง ${f1(b.power)}` : `แรงดีด ${f1(launcherParams(L).power)} → ${f1(b.power)}`;
+    return L === 0 ? `Activates: power ${f1(b.power)}` : `Power ${f1(launcherParams(L).power)} → ${f1(b.power)}`;
   }
   return '';
 }
@@ -335,9 +335,9 @@ export function fmtDuration(sec) {
   sec = Math.floor(sec);
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
-  if (h > 0) return `${h} ชม. ${m} นาที`;
-  if (m > 0) return `${m} นาที`;
-  return `${sec} วินาที`;
+  if (h > 0) return `${h} h ${m} min`;
+  if (m > 0) return `${m} min`;
+  return `${sec} s`;
 }
 
 // ---- the ONE income pipeline: every cash earning (coins, passive, offline-per-second) goes through here --------------
@@ -444,11 +444,11 @@ export function previewNewRun(s) {
   };
 }
 export const ACHIEVEMENTS = {
-  run1: { name: 'จบรันแรก', test: (s) => s.perm.runsCompleted >= 1 },
-  stage10: { name: 'ถึงด่าน 10', test: (s) => s.perm.bestStage >= 10 },
-  flyer: { name: 'ชนะ Flying Ball 3 ครั้ง', test: (s) => s.mini.wins >= 3 },
-  x16: { name: 'ได้ตัวคูณ ×16 ขึ้นไป', test: (s) => s.mini.bestMult >= 16 },
-  rich: { name: 'รายได้รวม $1M', test: (s) => s.stats.totalEarned >= 1e6 },
+  run1: { name: 'Finish your first run', test: (s) => s.perm.runsCompleted >= 1 },
+  stage10: { name: 'Reach stage 10', test: (s) => s.perm.bestStage >= 10 },
+  flyer: { name: 'Win Flying Ball 3 times', test: (s) => s.mini.wins >= 3 },
+  x16: { name: 'Win a x16 or higher boost', test: (s) => s.mini.bestMult >= 16 },
+  rich: { name: 'Earn $1M in total', test: (s) => s.stats.totalEarned >= 1e6 },
 };
 export function checkAchievements(s) {
   const out = [];

@@ -282,7 +282,7 @@ export class Machines {
     this.globalCd = JAM.globalCooldown;
   }
 
-  // ---- manual "ช่วยดัน" button: one extra stroke on every piston + a gentle board shake ------
+  // ---- manual "assist" button: one extra stroke on every piston + a gentle board shake ------
   manual() {
     if (this.manualCd > 0) return { ok: false, wait: this.manualCd };
     let n = 0;

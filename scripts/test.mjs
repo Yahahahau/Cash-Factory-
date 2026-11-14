@@ -75,7 +75,7 @@ t('offline income: needs an active pusher, capped, 50% efficiency', () => {
   truthy(o2.capped && o2.counted <= E.offlineCapSeconds(s) + 1);
 });
 t('formatting', () => {
-  eq(E.fmtMoney(5), '$5'); eq(E.fmtCash(12345), '12.3K'); eq(E.fmtDuration(125), '2 นาที');
+  eq(E.fmtMoney(5), '$5'); eq(E.fmtCash(12345), '12.3K'); eq(E.fmtDuration(125), '2 min');
 });
 t('save: round trip keeps cash, gems, stage, progress, levels, machines, settings, timestamp', () => {
   const s = E.newState();

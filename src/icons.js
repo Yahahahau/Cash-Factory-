@@ -1,0 +1,36 @@
+// Small original vector icons in the glossy Windows XP style (16x16 design grid, scalable). No external assets.
+const G = (id, a, b) => `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient>`;
+const ICONS = {
+  coin: `<defs>${G('c1', '#fff3a0', '#e69b00')}</defs><circle cx="8" cy="8" r="7" fill="url(#c1)" stroke="#8a5a00"/><circle cx="8" cy="8" r="4.6" fill="none" stroke="#b97a00" stroke-width=".8"/><path d="M8.3 4.6v6.8M10 6c-.4-.7-1.2-1-2-1-1 0-1.7.5-1.7 1.3 0 1.9 3.9.9 3.9 2.8 0 .8-.8 1.3-1.9 1.3-.9 0-1.7-.4-2.1-1.1" fill="none" stroke="#7a4b00" stroke-width="1"/>`,
+  gem: `<defs>${G('g1', '#d9ffff', '#14a8d8')}</defs><path d="M3 6l2.5-3.5h5L13 6 8 14z" fill="url(#g1)" stroke="#0a6a90"/><path d="M3 6h10M6.2 6L8 14l1.8-8M5.5 2.5L6.2 6M10.5 2.5L9.8 6" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width=".7"/>`,
+  gear: `<defs>${G('s1', '#f4f4f4', '#9aa0aa')}</defs><path d="M7 1h2l.4 2 1.4.6 1.7-1.2 1.4 1.4-1.2 1.7.6 1.4 2 .4v2l-2 .4-.6 1.4 1.2 1.7-1.4 1.4-1.7-1.2-1.4.6L9 15H7l-.4-2-1.4-.6-1.7 1.2-1.4-1.4 1.2-1.7-.6-1.4-2-.4V7l2-.4.6-1.4-1.2-1.7 1.4-1.4 1.7 1.2L6.6 3z" fill="url(#s1)" stroke="#4d5360" stroke-width=".8"/><circle cx="8" cy="8" r="2.4" fill="#fff" stroke="#4d5360"/>`,
+  chart: `<rect x="1.5" y="1.5" width="13" height="13" fill="#fff" stroke="#4a6fb5"/><rect x="3.5" y="8" width="2.4" height="5" fill="#3c8d3c"/><rect x="6.8" y="5" width="2.4" height="8" fill="#e0a800"/><rect x="10.1" y="3" width="2.4" height="10" fill="#d23c2a"/>`,
+  ball: `<defs><radialGradient id="b1" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#e6fbff"/><stop offset=".5" stop-color="#3fcfff"/><stop offset="1" stop-color="#1068c8"/></radialGradient></defs><path d="M1 6c2-2.5 3.500-2.500 5-1l-1 5C3.500 10 2 9 1 6z" fill="#fff" stroke="#6f93c8" stroke-width=".8"/><circle cx="9.200" cy="8" r="5.400" fill="url(#b1)" stroke="#0c3f8a"/><circle cx="10.800" cy="6.800" r="1.700" fill="#fff"/><circle cx="11.100" cy="6.900" r=".8" fill="#0b1330"/>`,
+  flag: `<path d="M3 1.500v13" stroke="#6b4a1a" stroke-width="1.400"/><defs>${G('f1', '#7ee06a', '#2d9a22')}</defs><path d="M3.500 2.500c3-1.500 5 1.500 9 0v6c-4 1.500-6-1.500-9 0z" fill="url(#f1)" stroke="#1d6a14" stroke-width=".8"/>`,
+  warn: `<defs>${G('w1', '#fff2a0', '#f0b400')}</defs><path d="M8 1.500l7 12.500H1z" fill="url(#w1)" stroke="#8a6200" stroke-linejoin="round"/><path d="M8 6v4" stroke="#3a2a00" stroke-width="1.600"/><circle cx="8" cy="11.800" r=".9" fill="#3a2a00"/>`,
+  info: `<defs><radialGradient id="i1" cx=".35" cy=".3" r=".9"><stop offset="0" stop-color="#bfe0ff"/><stop offset="1" stop-color="#1c5fd1"/></radialGradient></defs><circle cx="8" cy="8" r="7" fill="url(#i1)" stroke="#0b3a8c"/><circle cx="8" cy="4.600" r="1.100" fill="#fff"/><path d="M8 7v5" stroke="#fff" stroke-width="1.800"/>`,
+  clock: `<circle cx="8" cy="8" r="7" fill="#fff" stroke="#4a6fb5"/><path d="M8 3.500V8l3 1.800" stroke="#1a2f6a" stroke-width="1.300" fill="none"/>`,
+  piston: `<rect x="1" y="3" width="4" height="10" fill="#8a8f99" stroke="#3b3f48"/><rect x="5" y="5.500" width="6" height="5" fill="#c8ccd4" stroke="#3b3f48"/><rect x="11" y="3.500" width="3.500" height="9" fill="#e0a800" stroke="#7a5a00"/>`,
+  conveyor: `<rect x="1.500" y="5" width="13" height="6" rx="3" fill="#39414f" stroke="#171b22"/><circle cx="4.500" cy="8" r="1.500" fill="#aab"/><circle cx="11.500" cy="8" r="1.500" fill="#aab"/><path d="M6.500 8h3M8.500 6.800L9.800 8l-1.300 1.200" stroke="#ffd23f" fill="none"/>`,
+  fan: `<circle cx="8" cy="8" r="7" fill="#e8f2ff" stroke="#3a5a9a"/><path d="M8 8C8 4 11 3 12 5 11 7 9.500 8 8 8zM8 8c4 0 5 3 3 4-2-1-3-2.500-3-4zM8 8c0 4-3 5-4 3 1-2 2.500-3 4-3zM8 8C4 8 3 5 5 4c2 1 3 2.500 3 4z" fill="#4a90e2" stroke="#1d4f98" stroke-width=".5"/><circle cx="8" cy="8" r="1.300" fill="#fff" stroke="#1d4f98" stroke-width=".6"/>`,
+  magnet: `<path d="M3 2h3.500v7a1.500 1.500 0 003 0V2H13v7a5 5 0 01-10 0z" fill="#d83a2a" stroke="#6a1208"/><rect x="3" y="2" width="3.500" height="2.800" fill="#e8e8f0" stroke="#6a1208" stroke-width=".7"/><rect x="9.500" y="2" width="3.500" height="2.800" fill="#e8e8f0" stroke="#6a1208" stroke-width=".7"/>`,
+  launcher: `<path d="M2 12l7-7" stroke="#6b4a1a" stroke-width="3" stroke-linecap="round"/><path d="M9 3l4 4-2 2-4-4z" fill="#e0a800" stroke="#7a5a00"/><circle cx="12.500" cy="3.500" r="1.800" fill="#ff8a1a" stroke="#8a3a00"/>`,
+  box: `<defs>${G('x1', '#d6ecff', '#5b9be0')}</defs><path d="M2 5l6-3 6 3v7l-6 3-6-3z" fill="url(#x1)" stroke="#1d4f98"/><path d="M2 5l6 3 6-3M8 8v7" fill="none" stroke="#1d4f98" stroke-width=".8"/>`,
+  trophy: `<defs>${G('t1', '#fff3a0', '#e69b00')}</defs><path d="M4 2h8v4a4 4 0 01-8 0z" fill="url(#t1)" stroke="#8a5a00"/><path d="M4 3.500H1.500c0 3 1.200 4 2.800 4M12 3.500h2.500c0 3-1.200 4-2.800 4" fill="none" stroke="#8a5a00"/><rect x="7" y="10" width="2" height="2.500" fill="#e69b00" stroke="#8a5a00" stroke-width=".7"/><rect x="4.500" y="12.500" width="7" height="2" fill="#c07a00" stroke="#8a5a00" stroke-width=".7"/>`,
+  folder: `<defs>${G('d1', '#ffee9a', '#e3b436')}</defs><path d="M1 3.500h5l1.500 1.500H15v8H1z" fill="url(#d1)" stroke="#8a6a10"/>`,
+  power: `<circle cx="8" cy="8.500" r="5.500" fill="none" stroke="#fff" stroke-width="1.600"/><path d="M8 1.500v6" stroke="#fff" stroke-width="1.800"/>`,
+  boost: `<defs>${G('o1', '#fff3a0', '#f08a00')}</defs><path d="M9.500 1L3 9h4l-1 6 7-9H9z" fill="url(#o1)" stroke="#8a4a00" stroke-linejoin="round"/>`,
+  drop: `<defs>${G('p1', '#fff3a0', '#e69b00')}</defs><circle cx="8" cy="5" r="3.200" fill="url(#p1)" stroke="#8a5a00"/><path d="M8 9.500v5M5.500 12.500L8 15l2.500-2.500" stroke="#2a6a2a" stroke-width="1.700" fill="none"/>`,
+  sound: `<path d="M2 6h3l4-3.500v11L5 10H2z" fill="#c8ccd4" stroke="#3b3f48"/><path d="M11 5.500a3.500 3.500 0 010 5M12.800 3.500a6.500 6.500 0 010 9" stroke="#2a5ac0" fill="none" stroke-width="1.200"/>`,
+  screen: `<rect x="1.500" y="2" width="13" height="9" rx="1" fill="#6fa8f0" stroke="#1d4f98"/><rect x="3" y="3.500" width="10" height="6" fill="#d6ecff"/><path d="M5 14h6M8 11v3" stroke="#3b3f48" stroke-width="1.400"/>`,
+  mouse: `<rect x="3.500" y="1.500" width="9" height="13" rx="4.500" fill="#f4f4f4" stroke="#4d5360"/><path d="M8 1.500v5M3.500 6.500h9" stroke="#4d5360" fill="none"/>`,
+  disk: `<defs>${G('k1', '#8aaee8', '#2a56b0')}</defs><path d="M2 2h10l2 2v10H2z" fill="url(#k1)" stroke="#12327a"/><rect x="4.500" y="2" width="6" height="4" fill="#f4f4f4" stroke="#12327a" stroke-width=".7"/><rect x="4" y="9" width="8" height="5" fill="#d8dce6" stroke="#12327a" stroke-width=".7"/>`,
+  speed: `<path d="M2 12a6 6 0 1112 0" fill="none" stroke="#4a6fb5" stroke-width="1.600"/><path d="M8 12l3-5" stroke="#d23c2a" stroke-width="1.600"/><circle cx="8" cy="12" r="1.200" fill="#333"/>`,
+  check: `<path d="M2 8.500l4 4L14 3.500" stroke="#2a8a2a" stroke-width="2.400" fill="none"/>`,
+};
+export function icon(name, size = 16) {
+  const body = ICONS[name] || ICONS.info;
+  // ids inside each svg are unique per icon name, so repeating an icon is safe
+  return `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true">${body}</svg>`;
+}
+export const ICON_NAMES = Object.keys(ICONS);

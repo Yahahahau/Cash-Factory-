@@ -161,16 +161,19 @@ export class FlyView {
   }
 
   _build() {
-    const el = document.createElement('div');
-    el.className = 'mini';
-    el.innerHTML = `
-      <div class="mini-top">
-        <button class="mbtn" id="mPause" aria-label="หยุดชั่วคราว">II</button>
-        <div class="mini-info"><div class="mini-score" id="mScore">0</div><div class="mini-obj" id="mObj"></div></div>
-        <button class="mbtn red" id="mClose" aria-label="ปิด">X</button>
-      </div>
-      <div class="mini-stage" id="mStage"><canvas id="mCanvas" width="${FLY.W}" height="${FLY.H}"></canvas><div class="mini-ov" id="mOv"></div></div>`;
-    this.host.appendChild(el);
+    const wm = this.o.wm;
+    this.win = wm.open({
+      id: 'fly', title: 'Flying Ball', icon: 'ball', width: 380, height: 'calc(100% - 8px)', fill: true, cls: 'tall', task: true,
+      html: `<div class="fly-body">
+        <div class="fly-bar"><button class="xpbtn touch" id="mPause" aria-label="Pause" style="min-width:0"><span>Pause</span></button>
+          <div class="sc"><b id="mScore">0</b><small id="mObj"></small></div>
+          <button class="xpbtn touch" id="mRetryTop" aria-label="Retry" style="min-width:0"><span>Retry</span></button></div>
+        <div class="fly-stage" id="mStage"><canvas id="mCanvas" width="${FLY.W}" height="${FLY.H}"></canvas><div class="fly-ov hidden" id="mOv"></div></div></div>`,
+      onClose: () => { if (!this.dead) this.close(); },
+      onMinimize: () => this.togglePause(true),
+      onResize: () => requestAnimationFrame(() => this._fit()),
+    });
+    const el = this.win.body;
     this.el = el;
     this.canvas = el.querySelector('#mCanvas');
     this.ctx = this.canvas.getContext('2d');
@@ -196,7 +199,7 @@ export class FlyView {
 
   _bind() {
     const tap = (e) => {
-      if (e.target.closest('.mini-ov button')) return;
+      if (e.target.closest('.fly-ov button')) return;
       if (this.over || this.paused) return;
       e.preventDefault();
       this.core.flap();
@@ -208,7 +211,7 @@ export class FlyView {
     };
     window.addEventListener('keydown', this._key);
     this.el.querySelector('#mPause').addEventListener('click', () => this.togglePause());
-    this.el.querySelector('#mClose').addEventListener('click', () => this.close());
+    this.el.querySelector('#mRetryTop').addEventListener('click', () => this.manualRetry());
     this._vis = () => { if (document.hidden && this.core.state === 'play') this.togglePause(true); };
     document.addEventListener('visibilitychange', this._vis);
   }
@@ -223,7 +226,7 @@ export class FlyView {
 
   _updHud() {
     this.scoreEl.textContent = String(this.core.score);
-    this.objEl.textContent = `เป้าหมาย ${this.core.score}/${this.core.objective}`;
+    this.objEl.textContent = `Gates ${this.core.score} / ${this.core.objective}`;
   }
 
   _result() {
@@ -243,13 +246,13 @@ export class FlyView {
 
   showIntro() {
     this.ov.dataset.mode = 'intro';
-    this.ov.innerHTML = `<div class="mpanel">
-      <div class="mtitle">FLYING BALL</div>
-      <div class="mtext">ภารกิจ: บินผ่านประตู <b>${this.core.objective}</b> บาน</div>
-      <div class="mtext sm">แตะหน้าจอเพื่อกระพือปีก หลบเสาคริสตัล<br>สำเร็จเพื่อลุ้นตัวคูณกำไร ×2 – ×256</div>
-      <div class="mtext sm">คะแนนสูงสุด: <b>${this.o.best}</b></div>
-      <div class="mhint">แตะเพื่อเริ่ม</div></div>`;
+    this.ov.innerHTML = `<div class="fly-msg"><div class="xp-title"><span class="xp-ttl">Mission</span></div><div class="mb">
+      <div class="xph">Fly through ${this.core.objective} gates</div>
+      <div class="xps">Tap the screen to flap. Avoid the crystal pillars. Win to roll a profit multiplier (x2 to x256).</div>
+      <div class="xpkv"><span>Best score</span><b>${this.o.best}</b></div>
+      <div class="xp-btnrow center"><button class="xpbtn def touch" id="mGo"><span>Tap to start</span></button></div></div></div>`;
     this.ov.classList.remove('hidden');
+    this.ov.querySelector('#mGo').addEventListener('click', () => { this.core.flap(); this.hideOv(); });
   }
 
   hideOv() {
@@ -261,11 +264,12 @@ export class FlyView {
     if (!this.el.isConnected) return;
     this.ov.dataset.mode = 'over';
     const c = this.core;
-    this.ov.innerHTML = `<div class="mpanel">
-      <div class="mtitle red">ตกแล้ว!</div>
-      <div class="mtext">คะแนน <b>${c.score}</b> / ${c.objective}</div>
-      <div class="mtext sm">ดีที่สุด: <b>${Math.max(this.o.best, c.score)}</b> · ยังไม่ได้รางวัล ลองอีกครั้งได้ไม่มีคูลดาวน์</div>
-      <div class="mrow"><button class="mbtn big" id="mRetry">ลองใหม่</button><button class="mbtn big grey" id="mExit">ออก</button></div></div>`;
+    this.ov.innerHTML = `<div class="fly-msg"><div class="xp-title"><span class="xp-ttl">Game Over</span></div><div class="mb">
+      <div class="xph" style="color:var(--warn)">The ball crashed!</div>
+      <div class="xpkv"><span>Score</span><b>${c.score} / ${c.objective}</b></div>
+      <div class="xpkv"><span>Best</span><b>${Math.max(this.o.best, c.score)}</b></div>
+      <div class="xps">No reward this time. Try again with no cooldown.</div>
+      <div class="xp-btnrow center"><button class="xpbtn def touch" id="mRetry"><span>Retry</span></button><button class="xpbtn touch" id="mExit"><span>Exit</span></button></div></div></div>`;
     this.ov.classList.remove('hidden');
     this.ov.querySelector('#mRetry').addEventListener('click', () => this.retry());
     this.ov.querySelector('#mExit').addEventListener('click', () => this.close());
@@ -273,9 +277,16 @@ export class FlyView {
 
   showWin() {
     this.ov.dataset.mode = 'won';
-    this.ov.innerHTML = `<div class="mpanel"><div class="mtitle gold">ภารกิจสำเร็จ!</div><div class="mtext">กำลังสุ่มรางวัล…</div></div>`;
+    this.ov.innerHTML = `<div class="fly-msg"><div class="xp-title"><span class="xp-ttl">Mission Complete</span></div><div class="mb"><div class="xph" style="color:var(--money)">Mission complete!</div><div class="xps">Rolling your reward...</div><div class="xpprog indet"><i></i></div></div></div>`;
     this.ov.classList.remove('hidden');
     setTimeout(() => this.close(true), 900);
+  }
+
+  manualRetry() {
+    if (this.over && this.ov.dataset.mode === 'won') return;
+    if (!this.settled) { this.settled = true; this.o.onFinish({ ...this._result(), abandoned: true }); }
+    this.paused = false;
+    this.retry();
   }
 
   retry() {
@@ -294,16 +305,12 @@ export class FlyView {
     this.paused = force !== undefined ? !!force : !this.paused;
     if (this.paused) {
       this.ov.dataset.mode = 'pause';
-      this.ov.innerHTML = `<div class="mpanel"><div class="mtitle">พัก</div>
-        <div class="mrow col"><button class="mbtn big" id="mResume">เล่นต่อ</button><button class="mbtn big grey" id="mRestart">เริ่มใหม่</button></div></div>`;
+      this.ov.innerHTML = `<div class="fly-msg"><div class="xp-title"><span class="xp-ttl">Paused</span></div><div class="mb">
+        <div class="xph">Game paused</div>
+        <div class="xp-btnrow center"><button class="xpbtn def touch" id="mResume"><span>Resume</span></button><button class="xpbtn touch" id="mRestart"><span>Restart</span></button></div></div></div>`;
       this.ov.classList.remove('hidden');
       this.ov.querySelector('#mResume').addEventListener('click', () => this.togglePause(false));
-      this.ov.querySelector('#mRestart').addEventListener('click', () => {
-        // restarting abandons this attempt (counts as a failed attempt, no cooldown)
-        if (!this.settled) { this.settled = true; this.o.onFinish({ ...this._result(), abandoned: true }); }
-        this.paused = false;
-        this.retry();
-      });
+      this.ov.querySelector('#mRestart').addEventListener('click', () => this.manualRetry());
     } else this.hideOv();
     this.last = performance.now();
   }
@@ -319,8 +326,8 @@ export class FlyView {
     window.removeEventListener('keydown', this._key);
     document.removeEventListener('visibilitychange', this._vis);
     this._ro && this._ro.disconnect();
-    this.el.remove();
     this.dead = true;
+    if (!this.win.closed) this.win.close(true);
   }
 
   _frame(now) {
@@ -328,6 +335,7 @@ export class FlyView {
     this.raf = requestAnimationFrame((t) => this._frame(t));
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
+    if (!this.paused && !this.over && this.core.state === 'play' && this.o.wm.active && this.o.wm.active !== this.win) this.togglePause(true);
     if (!this.paused) this.core.update(dt);
     this.shake = Math.max(0, this.shake - dt * 4);
     this.bump = Math.max(0, (this.bump || 0) - dt * 6);
