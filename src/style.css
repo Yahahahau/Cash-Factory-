@@ -51,9 +51,9 @@ button { font-family: inherit; color: inherit; cursor: pointer; border: 0; paddi
 .round-btn { pointer-events: auto; width: 44px; height: 44px; border-radius: 50%; background: rgba(70, 76, 92, 0.86); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; box-shadow: 0 0 0 2px rgba(12, 15, 29, 0.7); flex: 0 0 auto; }
 .round-btn i { display: block; width: 18px; height: 3px; background: #fff; }
 .round-btn:active { transform: scale(0.94); }
-.stage-box { flex: 1 1 auto; min-width: 0; text-align: center; padding-top: 14px; }
+.stage-box { flex: 1 1 auto; min-width: 0; text-align: center; padding-top: 0; margin-top: -6px; }
 .stage-title { font-family: var(--th); font-weight: 800; font-size: clamp(18px, 5.4vw, 24px); color: #fff; text-shadow: 2px 2px 0 #1b2236, -1px -1px 0 #1b2236, 1px -1px 0 #1b2236, -1px 1px 0 #1b2236; }
-.pbar { position: relative; height: 22px; width: min(190px, 100%); margin: 8px auto 0; background: #1d2740; box-shadow: 0 0 0 2px #dfe6f5, 0 0 0 4px #20293f; overflow: hidden; }
+.pbar { position: relative; height: 22px; width: min(190px, 100%); margin: 4px auto 0; background: #1d2740; box-shadow: 0 0 0 2px #dfe6f5, 0 0 0 4px #20293f; overflow: hidden; }
 .pbar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(#6cf58a, #25c45a); transition: width 0.25s steps(6); }
 .pbar span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--px); font-size: 9px; color: #fff; text-shadow: 1px 1px 0 #1b2236; }
 .cash-col { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 96px; }
