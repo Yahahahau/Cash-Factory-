@@ -92,7 +92,7 @@ t('save: corrupt / hostile data is sanitised', () => {
 t('layout: every stage has labels for its machines, a pit, a pipe and coin configs match', () => {
   for (let n = 1; n <= 12; n++) {
     const d = getStage(n);
-    truthy(d.labels.length >= d.pistons.length + d.belts.length, 'labels stage ' + n);
+    truthy(d.labels.length >= d.pistons.filter((p) => p.id !== 'sweeper').length + d.belts.length, 'labels stage ' + n);
     for (const l of d.labels) truthy(E.MACHINES[l.id], 'machine ' + l.id);
     truthy(d.pit.x1 > d.pit.x0 && d.pipe && d.spawn, 'pit/pipe');
     truthy(d.palette, 'palette');

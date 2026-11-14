@@ -193,7 +193,7 @@ const pos = (r, idx) => r.phys.slots[idx].body.translation();
   state.stage = 1; state.progress = E.stageTarget(1) - 1;
   const gems0 = state.gems, b0 = banners;
   for (let i = 0; i < 60 * 30 && state.stage === 1; i++) game.update(1 / 60);
-  ok('stage completes: reward, next stage layout rebuilt, progress reset', state.stage === 2 && state.gems > gems0 && banners === b0 + 1 && stageSetups >= 2 && state.progress < 3 && game.stageDef.n === 2 && game.stageDef.pistons.length === 4, 'stage ' + state.stage + ', gems ' + state.gems + ', pistons ' + game.stageDef.pistons.length);
+  ok('stage completes: reward, next stage layout rebuilt, progress reset', state.stage === 2 && state.gems > gems0 && banners === b0 + 1 && stageSetups >= 2 && state.progress < 3 && game.stageDef.n === 2 && game.stageDef.pistons.filter((q) => q.id !== 'sweeper').length === 4, 'stage ' + state.stage + ', gems ' + state.gems + ', pistons ' + game.stageDef.pistons.length);
   for (let i = 0; i < 60 * 60; i++) game.update(1 / 60);
   ok('stage 2 (4 platforms + hopper) also delivers coins to the grinder', state.progress > 5, 'progress ' + state.progress);
   ok('no coin escaped the machine in the full run', game.escaped === 0, 'escaped ' + game.escaped);
@@ -203,6 +203,27 @@ const pos = (r, idx) => r.phys.slots[idx].body.translation();
   game.charges = 2;
   const dropped = game.drop();
   ok('manual drop spawns a coin with the same physics and spends a charge', dropped && phys.active.length === before + 1 && game.charges === 1);
+}
+
+
+// 12. stress: maxed machines + very high Coin/s must not silt up the hopper (the sweeper pulls back into the wall rhythmically)
+{
+  const r = rig(3, { pusherA: 12, pusherB: 12, pusherD: 12, conv1: 10, fan1: 10, magnet1: 10 });
+  let collected = 0, peak = 0, hopperPeak = 0;
+  r.onCollect = () => { collected++; };
+  const hop = r.def.jam.find((z) => z.name === 'hopper');
+  run(r, 90, (i) => {
+    if (i % 8 === 0 && r.phys.active.length < 110) r.phys.spawn(-1.9 + (rnd() - 0.5) * 0.2, 13.7, rnd() < 0.8 ? 0 : 1, 1);
+    if (i % 30 === 0) {
+      let n = 0;
+      for (const idx of r.phys.active) { const p = pos(r, idx); if (p.x > -3 && p.x < -0.3 && p.y > 1.0 && p.y < 4.2) n++; }
+      hopperPeak = Math.max(hopperPeak, n);
+      peak = Math.max(peak, r.phys.active.length);
+    }
+  });
+  let leftIn = 0;
+  for (const idx of r.phys.active) { const p = pos(r, idx); if (p.x > -3 && p.x < -0.3 && p.y > 1.0 && p.y < 4.2) leftIn++; }
+  ok('maxed machines at ~7.5 coins/s: hopper never silts up and coins keep flowing', collected > 300 && hopperPeak < 40, 'collected ' + collected + ', coins in hopper now ' + leftIn + ' (peak ' + hopperPeak + ')');
 }
 
 console.log(`\n${pass} physics tests passed${fail ? ', ' + fail + ' FAILED' : ''}`);

@@ -80,10 +80,17 @@ function zigzag(n, tops, o = {}) {
   def.blocks.push({ x0: -0.4, x1: 0.3, y0: 0, y1: last - SLAB_T, kind: 'column' });
   if (o.hopper) {
     // funnel into the grinder: slot between the plate end and the column is only 0.7 wide
-    const x0 = -IN_HALF, y0 = 3.0, x1 = -1.1, y1 = 1.85;
+    const x0 = -IN_HALF, y0 = 3.2, x1 = -1.5, y1 = 1.9;
     const dx = x1 - x0, dy = y1 - y0;
-    def.plates.push({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 - 0.2, halfLen: Math.hypot(dx, dy) / 2, ang: Math.atan2(dy, dx), thick: 0.4 });
-    def.jam.push({ name: 'hopper', x0: -1.9, x1: -0.4, y0: PIT_COLLECT_Y + 0.15, y1: 3.4 });
+    const ang = Math.atan2(dy, dx);
+    def.plates.push({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 - 0.2, halfLen: Math.hypot(dx, dy) / 2, ang, thick: 0.4 });
+    // wall sweeper: a piston lying along the funnel plate that sweeps the pile towards the gap and pulls back into the
+    // wall on a steady rhythm (independent of upgrades), so the hopper can never silt up
+    const nx = -Math.sin(ang), ny = Math.cos(ang);
+    const off = HEAD.hy + 0.1;
+    def.pistons.push({ id: 'sweeper', side: 'L', dir: 1, wall: x0, y: y0 + ny * off, top: y0, ang, maxExt: Math.hypot(dx, dy) - 0.5, rhythm: 3.4 });
+    void nx;
+    def.jam.push({ name: 'hopper', x0: -1.9, x1: -0.4, y0: PIT_COLLECT_Y + 0.15, y1: 3.0 });
   }
   if (o.fan !== undefined) {
     const top = tops[o.fan];
@@ -91,7 +98,7 @@ function zigzag(n, tops, o = {}) {
     def.labels.push({ id: 'fan1', x: 0.0, y: top - 0.45 });
   }
   if (o.magnet) {
-    def.magnets.push({ id: 'magnet1', x: -0.45, y: 3.3, tx: -0.75, ty: 1.4, r: 2.1 });
+    def.magnets.push({ id: 'magnet1', x: -0.45, y: 3.3, tx: -0.95, ty: 1.2, r: 2.0 });
     def.labels.push({ id: 'magnet1', x: -1.55, y: 4.3 });
   }
   if (o.launcher !== undefined) {

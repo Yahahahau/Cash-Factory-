@@ -450,6 +450,7 @@ export class World {
       const decal = this._box(0.5, 0.78, 0.06, M.hazard, wallSide * (IN_HALF + 0.3), pd.y, SLAB_Z + 0.1, grp);
       decal.castShadow = false;
       const port = this._box(0.05, HEAD.hy * 2 + 0.06, HEAD.hz * 2 + 0.04, M.dark, wallSide * IN_HALF, pd.y, 0, grp, false);
+      port.rotation.z = pd.ang || 0;
       const rod = this._box(1, HEAD.hy * 2 - 0.1, HEAD.hz * 2 - 0.16, M.metalDark, 0, pd.y, 0, grp);
       const head = this._box(HEAD.hw * 2, HEAD.hy * 2, HEAD.hz * 2, M.metal, 0, pd.y, 0, grp);
       const stripe = this._box(HEAD.hw * 2 + 0.01, HEAD.hy * 2 - 0.14, 0.1, M.hazard, 0, pd.y, HEAD.hz - 0.02, grp);
@@ -635,14 +636,19 @@ export class World {
         const p = machines.pistons[i];
         if (!p) return;
         const d = v.def;
-        const wallX = d.wall;
-        const front = wallX + d.dir * p.ext;
-        const headX = front - d.dir * HEAD.hw;
-        v.head.position.x = headX;
-        v.stripe.position.x = headX;
-        const len = Math.max(0.01, Math.abs(headX - HEAD.hw * 0 - wallX) - HEAD.hw);
-        v.rod.scale.x = Math.max(0.01, len + 0.4);
-        v.rod.position.x = wallX + d.dir * (len / 2) - d.dir * 0.2;
+        const ang = d.ang || 0;
+        const ux = d.dir * Math.cos(ang), uy = d.dir * Math.sin(ang);
+        const at = (sPos) => [d.wall + ux * sPos, d.y + uy * sPos];
+        const hs = p.ext - HEAD.hw;
+        const [hx, hy] = at(hs);
+        v.head.position.set(hx, hy, 0);
+        v.stripe.position.set(hx, hy, 0 + HEAD.hz - 0.02);
+        const s0 = -0.2;
+        const len = Math.max(0.01, hs - s0);
+        const [rx, ry] = at((s0 + hs) / 2);
+        v.rod.scale.x = len;
+        v.rod.position.set(rx, ry, 0);
+        v.head.rotation.z = v.rod.rotation.z = v.stripe.rotation.z = ang;
       });
       V.belts.forEach((v, i) => {
         const b = machines.belts[i];

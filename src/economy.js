@@ -132,7 +132,7 @@ export function blowerForce(level) {
   return level <= 0 ? 0 : 3 + 1.1 * level; // m/s^2 applied to coins in the airstream
 }
 export function magnetForce(level) {
-  return level <= 0 ? 0 : 4 + 1.5 * level;
+  return level <= 0 ? 0 : 2.5 + 0.9 * level;
 }
 export function launcherParams(level) {
   return level <= 0 ? { active: false } : { active: true, power: 4.2 + 0.35 * level, cooldown: Math.max(1.2, 3.2 - 0.18 * level) };

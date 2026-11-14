@@ -7,7 +7,7 @@
 // piston stroke, are never touched. The reaction is always a physical one: a full piston stroke, or a small
 // air-burst impulse. Coins are never teleported, deleted or repositioned.
 import * as E from './economy.js';
-import { HEAD, JAM, Z_HALF } from './layout.js';
+import { HEAD, JAM } from './layout.js';
 import { GROUPS, colliderSize } from './physics.js';
 
 const smooth = (t) => {
@@ -52,7 +52,10 @@ export class Machines {
     this.def = def;
     this.pistons = def.pistons.map((d, i) => {
       const rodHalf = d.maxExt / 2 + 0.2;
-      const body = this.physics.world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(d.wall - d.dir * rodHalf, d.y, 0));
+      const a = d.ang || 0;
+      const body = this.physics.world.createRigidBody(
+        R.RigidBodyDesc.kinematicPositionBased().setTranslation(d.wall - d.dir * Math.cos(a) * rodHalf, d.y - d.dir * Math.sin(a) * rodHalf, 0).setRotation({ x: 0, y: 0, z: Math.sin(a / 2), w: Math.cos(a / 2) })
+      );
       this.physics.world.createCollider(
         R.ColliderDesc.cuboid(rodHalf, HEAD.hy, HEAD.hz).setFriction(0.4).setRestitution(0.05).setCollisionGroups(GROUPS.push),
         body
@@ -69,17 +72,30 @@ export class Machines {
   reset() {
     for (const p of this.pistons) {
       p.phase = 'idle'; p.t = 0; p.ext = 0; p.cool = 0; p.delay = 0; p.timer = 1;
-      p.body.setNextKinematicTranslation({ x: p.def.wall - p.def.dir * p.rodHalf, y: p.def.y, z: 0 });
+      this._place(p);
     }
     this.globalCd = 0;
     this.manualCd = 0;
   }
 
   // ---- pistons ------------------------------------------------------------
+  _par(p) {
+    // the hopper sweeper runs on a fixed rhythm; platform pistons follow their upgrade level
+    return p.def.rhythm ? { active: true, interval: p.def.rhythm, out: 1.0, back: 1.1 } : E.pusherParams(this.level(p.def.id));
+  }
+
+  // kinematic pose from the current extension (pistons may lie along a sloped plate)
+  _place(p) {
+    const d = p.def;
+    const a = d.ang || 0;
+    const ux = d.dir * Math.cos(a), uy = d.dir * Math.sin(a);
+    const fx = d.wall + ux * p.ext, fy = d.y + uy * p.ext;
+    p.body.setNextKinematicTranslation({ x: fx - ux * p.rodHalf, y: fy - uy * p.rodHalf, z: 0 });
+  }
+
   _begin(p, kind, delay = 0) {
     if (p.phase !== 'idle') return false;
-    const lv = this.level(p.def.id);
-    const par = E.pusherParams(lv);
+    const par = this._par(p);
     p.kind = kind;
     p.delay = delay;
     // emergency / manual strokes use a gentle but complete stroke
@@ -104,7 +120,7 @@ export class Machines {
     for (const p of this.pistons) {
       if (p.cool > 0) p.cool -= dt;
       if (p.flash > 0) p.flash -= dt;
-      const par = E.pusherParams(this.level(p.def.id));
+      const par = this._par(p);
       if (p.phase === 'idle') {
         if (par.active) {
           p.timer -= dt;
@@ -125,8 +141,7 @@ export class Machines {
         p.ext = p.def.maxExt * (1 - smooth(p.t / p.tBack));
         if (p.t >= p.tBack) { p.phase = 'idle'; p.t = 0; p.ext = 0; }
       }
-      const front = p.def.wall + p.def.dir * p.ext;
-      p.body.setNextKinematicTranslation({ x: front - p.def.dir * p.rodHalf, y: p.def.y, z: 0 });
+      this._place(p);
     }
 
     const phys = this.physics;
