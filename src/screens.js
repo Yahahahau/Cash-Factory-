@@ -61,7 +61,7 @@ export function openBoost(ui, s, h) {
     ${XPGroup('Reward chances', `<div class="probs">${probRows(st.state === 'boost' ? st.mult : 0)}</div>`)}
     <div class="xps">A new multiplier replaces the old one. It does not apply to gems, upgrade prices or stage rewards.</div>
     <div class="xp-btnrow">${XPButton({ id: 'bPlay', label: 'Open Flying Ball', ico: 'ball', cls: 'touch' })}${XPButton({ id: 'bClose', label: 'Close', def: true, cls: 'touch' })}</div>`;
-  const w = ui.wm.open({ id: 'boost', title: 'Profit Boost', icon: 'boost', width: 340, html, max: false });
+  const w = ui.wm.open({ id: 'boost', title: 'Profit Boost', icon: 'boost', width: 340, resize: true, minW: 300, minH: 260, html, max: false });
   w.q('#bClose').addEventListener('click', () => { h.onClick(); w.close(); });
   w.q('#bPlay').addEventListener('click', () => { h.onClick(); w.close(); openMini(ui, ui.state, h); });
   w._mode = st.state;

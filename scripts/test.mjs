@@ -270,4 +270,50 @@ t('save v3: round trip + old v2 save (no new fields) loads with safe defaults + 
   eq(s.cursor.owned, false, 'a new run resets the per-run upgrade');
   eq(E.cursorCost(s) > 500, true, 'price follows the run price multiplier');
 }
+
+// ---- exclusive mini-game session: central pause + frozen game clock ----
+import { PauseManager, GS } from '../src/pause.js';
+t('pause manager: RUNNING -> MINIGAME_ACTIVE -> RESUMING -> RUNNING, no double enter / exit', () => {
+  const s = E.newState(); const pm = new PauseManager(); const seen = [];
+  pm.on((st) => seen.push(st));
+  eq(pm.running, true); eq(pm.enterMini(s), true); eq(pm.enterMini(s), false, 'second enter'); eq(pm.state, GS.MINIGAME); eq(pm.frozen, true);
+  eq(pm.settle(), false, 'cannot settle before exit');
+  eq(pm.exitMini(s), true); eq(pm.state, GS.RESUMING); eq(pm.frozen, true, 'still frozen while re-basing');
+  eq(pm.exitMini(s), false); eq(pm.settle(), true); eq(pm.state, GS.RUNNING);
+  eq(seen.join(','), 'MINIGAME_ACTIVE,RESUMING,RUNNING');
+});
+t('game clock: boost / cooldown deadlines cannot expire while frozen, remaining time is preserved on resume', () => {
+  const s = E.newState(); const real = Date.now();
+  s.boost = { mult: 4, until: real + 60000 };
+  E.clock.freeze();
+  const f = E.clock.frozenAt;
+  const rem0 = E.miniStatus(s).remaining;
+  // simulate 90 s passing in real time while frozen: nothing may expire
+  const realNow = Date.now; Date.now = () => real + 90000;
+  try {
+    eq(E.expireBoost(s), false, 'boost does not expire while paused');
+    eq(Math.abs(E.miniStatus(s).remaining - rem0) < 0.01, true, 'remaining unchanged');
+    eq(E.boostMult(s), 4, 'multiplier still applies on the frozen clock');
+    const d = E.clock.thaw(s);
+    eq(d >= 89000 && d <= 91000, true, 'paused duration measured');
+    eq(Math.abs((s.boost.until - Date.now()) / 1000 - rem0) < 0.05, true, 'after resume the same time remains');
+  } finally { Date.now = realNow; E.clock.frozenAt = null; }
+  void f;
+});
+t('mini-game reward: granted once, boost starts with its full duration after the pause, replays rejected', () => {
+  const s = E.newState(); const real = Date.now();
+  const ses = E.startMini(s, real - 20000); truthy(ses, 'session');
+  E.clock.freeze();
+  const res = E.finishMini(s, { score: ses.objective, durationMs: ses.objective * 1000 }, undefined, () => 0.5);
+  eq(res.ok, true); eq(s.mini.wins, 1);
+  const rem = E.miniStatus(s).remaining;
+  eq(Math.abs(rem - E.ECON.mini.boostMinutes * 60) < 0.5, true, 'full boost on the frozen clock');
+  const realNow = Date.now; Date.now = () => real + 120000;
+  try {
+    E.clock.thaw(s);
+    eq(Math.abs(E.miniStatus(s).remaining - E.ECON.mini.boostMinutes * 60) < 0.5, true, 'boost not eaten by the pause');
+  } finally { Date.now = realNow; E.clock.frozenAt = null; }
+  eq(E.finishMini(s, { score: 99, durationMs: 99999 }).ok, false, 'second settle rejected');
+  eq(s.mini.wins, 1, 'no duplicate reward');
+});
 console.log(`\n${pass} tests passed`);

@@ -17,7 +17,13 @@ export class UI {
     this.labels = [];
     this.sheetKey = null;
     this._grab();
-    this.wm = new WindowManager(this.el.desktop, this.el.tasks);
+    this.wm = new WindowManager({ float: this.el.winlayer, mini: this.el.minilayer }, this.el.tasks, {
+      free: () => document.documentElement.dataset.mode !== 'mobile',
+      anchor: (layer) => {
+        const a = document.getElementById('appwin').getBoundingClientRect(), l = layer.getBoundingClientRect();
+        return { x: a.left - l.left, y: a.top - l.top, w: a.width, h: a.height };
+      },
+    });
     this.notes = new XPNotification(this.el.notifs);
     for (const n of document.querySelectorAll('[data-ico]')) n.innerHTML = icon(n.dataset.ico, n.closest('#startBtn') ? 20 : 16);
     this._bind();
@@ -31,7 +37,7 @@ export class UI {
     const g = (id) => document.getElementById(id);
     this.el = {
       stageTitle: g('stageTitle'), pBar: g('pBar'), pFill: g('pFill'), pText: g('pText'), cash: g('cash'), gems: g('gems'), combo: g('combo'),
-      labels: g('labels'), floats: g('floats'), flash: g('flash'), loading: g('loading'), desktop: g('desktop'), tasks: g('tasks'), notifs: g('notifs'),
+      labels: g('labels'), floats: g('floats'), flash: g('flash'), loading: g('loading'), winlayer: g('winlayer'), minilayer: g('minilayer'), tasks: g('tasks'), notifs: g('notifs'),
       drop: g('dropBtn'), dropFill: g('dropFill'), charges: g('charges'),
       rateBtn: g('rateBtn'), ratePrice: g('ratePrice'), rateLv: g('rateLv'), rateInfo: g('rateInfo'),
       padCap: g('padCap'), padRare: g('padRare'),

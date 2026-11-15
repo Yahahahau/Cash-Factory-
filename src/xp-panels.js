@@ -63,7 +63,7 @@ export function openSettings(ui, startTab = 0) {
           buttons: [{ id: 'rYes', label: 'Yes, reset', cls: 'red', onClick: (w) => { w.close(true); ui.wm.closeAll(true); h.onReset(); } }, { id: 'rNo', label: 'Cancel', def: true, onClick: (w) => w.close() }] }));
       } },
   ];
-  const w = ui.wm.open({ id: 'settings', title: 'Settings', icon: 'gear', width: 360, html: '<div id="setTabs" style="display:flex;flex-direction:column;min-height:0;flex:1"></div><div class="xp-btnrow">' + XPButton({ id: 'setOk', label: 'OK', def: true }) + '</div>', height: 'min(560px, calc(100% - 8px))', max: true });
+  const w = ui.wm.open({ id: 'settings', title: 'Settings', icon: 'gear', width: 360, resize: true, minW: 300, minH: 260, html: '<div id="setTabs" style="display:flex;flex-direction:column;min-height:0;flex:1"></div><div class="xp-btnrow">' + XPButton({ id: 'setOk', label: 'OK', def: true }) + '</div>', height: 'min(560px, calc(100% - 8px))', max: true });
   w.q('#setOk').addEventListener('click', () => { h.onClick(); w.close(); });
   w.tabs = new XPTabControl(w.q('#setTabs'), tabs, startTab);
   if (!ui.wm.has('settings')) return;

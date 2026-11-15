@@ -59,6 +59,15 @@ export class Game {
     this.machines.reset();
   }
 
+  // after a pause: drop every accumulated frame time so nothing catches up in one big step
+  rebase() {
+    this.acc = 0;
+    this.timerT = 0;
+    this._mAcc = 0;
+    this._mT = 0;
+    this.floatT = 0;
+  }
+
   get stored() {
     return this.physics.active.length;
   }
@@ -141,7 +150,7 @@ export class Game {
     this.timerT = (this.timerT || 0) + dt;
     if (this.timerT >= 0.25) {
       this.timerT = 0;
-      const now = Date.now();
+      const now = E.clock.now();
       if (E.expireBoost(s, now)) this.ui.onBoostEnd && this.ui.onBoostEnd();
       if (E.refreshTier(s)) this.ui.updateLabels && this.ui.updateLabels();
     }

@@ -83,39 +83,58 @@ export class XPNotification {
 }
 
 // ---------- window ----------
+// A window lives in one of the desktop layers (never inside the game window). Positions are kept in layer coordinates, one
+// per boundary policy: "free" (desktop / landscape tablet: the whole workspace) and "contain" (phone portrait: inside the
+// game viewport). The manager keeps every window reachable when the workspace changes size or orientation.
+const KEEP = 96; // px of a free window that must stay on the desktop
+const TITLE_KEEP = 34;
 export class XPWindow {
   constructor(wm, o) {
     this.wm = wm; this.o = o; this.id = o.id; this.minimized = false; this.maxed = false; this.closed = false;
+    this.layer = o.layer === 'mini' ? 'mini' : 'float';
+    this.pos = { free: null, contain: null }; // user chosen positions (null = auto placed)
+    this.size = null; // user chosen {w,h}
     const canMin = o.min !== false && !o.modal, canMax = o.max !== false && !o.modal, canClose = o.close !== false;
     const el = document.createElement('div');
-    el.className = 'xpwin' + (o.dock ? ' dock-' + o.dock : '') + (o.cls ? ' ' + o.cls : '');
+    el.className = 'xpwin' + (o.cls ? ' ' + o.cls : '');
+    el.dataset.win = o.id;
     el.setAttribute('role', o.modal ? 'dialog' : 'group');
     el.setAttribute('aria-label', o.title);
     if (o.modal) el.setAttribute('aria-modal', 'true');
     el.style.setProperty('--w', (o.width || 340) + 'px');
     if (o.height) el.style.height = o.height;
-    el.innerHTML = `${XPTitleBar(o.title, o.icon, { min: canMin, max: canMax, close: canClose })}<div class="xp-body ${o.fill ? 'fill' : ''}"></div>`;
+    el.innerHTML = `${XPTitleBar(o.title, o.icon, { min: canMin, max: canMax, close: canClose })}<div class="xp-body ${o.fill ? 'fill' : ''}"></div>${o.resize ? '<i class="xp-rz e"></i><i class="xp-rz s"></i><i class="xp-rz se"></i>' : ''}`;
     this.el = el; this.bar = el.querySelector('.xp-title'); this.body = el.querySelector('.xp-body');
-    this.titleEl = el.querySelector('.xp-ttl'); this.maxBtn = el.querySelector('.xp-max');
+    this.titleEl = el.querySelector('.xp-ttl'); this.maxBtn = el.querySelector('.xp-max'); this.closeBtn = el.querySelector('.xp-close');
     if (o.html !== undefined) this.body.innerHTML = o.html;
     if (o.reveal) this.body.classList.add('xp-reveal');
     const on = (sel, fn) => { const b = el.querySelector(sel); if (b) b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); };
     on('.xp-min', () => this.minimize());
     on('.xp-max', () => this.toggleMax());
-    on('.xp-close', () => this.close());
+    on('.xp-close', () => this.requestClose());
     el.addEventListener('pointerdown', () => wm.focus(this), true);
     if (canMax) this.bar.addEventListener('dblclick', (e) => { if (!e.target.closest('.xp-ctl')) this.toggleMax(); });
     this._drag();
+    if (o.resize) this._resize();
   }
   q(sel) { return this.body.querySelector(sel); }
   qa(sel) { return [...this.body.querySelectorAll(sel)]; }
   setTitle(t) { this.titleEl.textContent = t; this.el.setAttribute('aria-label', t); if (this.task) this.task.querySelector('span').textContent = t; }
   setHtml(h) { this.body.innerHTML = h; }
+  // the close button / Esc ask first: a window can refuse (e.g. a running mini-game)
+  allowClose() { return !this.o.canClose || this.o.canClose(); }
+  requestClose() { if (!this.allowClose()) { this.nudge(); return false; } this.close(); return true; }
+  setCloseEnabled(on) {
+    if (!this.closeBtn) return;
+    this.closeBtn.disabled = !on;
+    this.closeBtn.classList.toggle('off', !on);
+  }
   toggleMax() {
     this.maxed = !this.maxed;
     this.el.classList.toggle('max', this.maxed);
     this.maxBtn && this.maxBtn.classList.toggle('restore', this.maxed);
     this.maxBtn && this.maxBtn.setAttribute('aria-label', this.maxed ? 'Restore' : 'Maximize');
+    if (!this.maxed) this.wm.place(this);
     this.o.onResize && this.o.onResize();
   }
   minimize() {
@@ -151,37 +170,118 @@ export class XPWindow {
     let st = null;
     this.bar.addEventListener('pointerdown', (e) => {
       if (e.target.closest('.xp-ctl') || this.maxed || e.button > 0) return;
-      const r = this.el.getBoundingClientRect(), d = this.wm.desktop.getBoundingClientRect();
-      st = { dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height, d, id: e.pointerId, moved: false };
+      const r = this.el.getBoundingClientRect(), d = this.wm.layerEl(this).getBoundingClientRect();
+      st = { dx: e.clientX - r.left, dy: e.clientY - r.top, d, id: e.pointerId };
       this.bar.setPointerCapture(e.pointerId);
     });
     this.bar.addEventListener('pointermove', (e) => {
       if (!st || e.pointerId !== st.id) return;
-      if (!st.moved) { if (Math.abs(e.clientX - st.dx) < 0) return; st.moved = true; this.el.classList.add('dragged'); this.el.style.height = this.el.offsetHeight + 'px'; }
-      const x = Math.max(0, Math.min(st.d.width - 60, e.clientX - st.d.left - st.dx));
-      const y = Math.max(0, Math.min(st.d.height - 30, e.clientY - st.d.top - st.dy));
-      this.el.style.left = x + 'px'; this.el.style.top = y + 'px';
+      this.el.classList.add('dragging');
+      const p = this.wm.clamp(this, e.clientX - st.d.left - st.dx, e.clientY - st.d.top - st.dy);
+      this.el.style.left = p.x + 'px'; this.el.style.top = p.y + 'px';
+      this.pos[this.wm.policy()] = p;
     });
-    const end = (e) => { if (st && e.pointerId === st.id) st = null; };
+    const end = (e) => { if (st && e.pointerId === st.id) { st = null; this.el.classList.remove('dragging'); } };
     this.bar.addEventListener('pointerup', end);
     this.bar.addEventListener('pointercancel', end);
+  }
+  _resize() {
+    const minW = this.o.minW || 280, minH = this.o.minH || 180;
+    for (const h of this.el.querySelectorAll('.xp-rz')) {
+      let st = null;
+      h.addEventListener('pointerdown', (e) => {
+        if (this.maxed || e.button > 0) return;
+        e.stopPropagation();
+        const B = this.wm.bounds(this);
+        st = { x: e.clientX, y: e.clientY, w: this.el.offsetWidth, h: this.el.offsetHeight, B, id: e.pointerId, px: this.el.offsetLeft, py: this.el.offsetTop };
+        h.setPointerCapture(e.pointerId);
+      });
+      h.addEventListener('pointermove', (e) => {
+        if (!st || e.pointerId !== st.id) return;
+        const dx = h.classList.contains('s') ? 0 : e.clientX - st.x, dy = h.classList.contains('e') ? 0 : e.clientY - st.y;
+        const w = Math.round(Math.max(minW, Math.min(st.B.w - 8 - Math.max(0, st.px), st.w + dx)));
+        const hh = Math.round(Math.max(minH, Math.min(st.B.h - 8 - Math.max(0, st.py), st.h + dy)));
+        this.el.style.setProperty('--w', w + 'px'); this.el.style.height = hh + 'px';
+        this.size = { w, h: hh };
+        this.o.onResize && this.o.onResize();
+      });
+      const end = (e) => { if (st && e.pointerId === st.id) st = null; };
+      h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
+    }
   }
 }
 
 // ---------- window manager + taskbar ----------
+// layers: { float, mini } DOM containers (siblings of the game window). opts: { free(): bool, anchor(): {x,y,w,h}|null }
 export class WindowManager {
-  constructor(desktop, tasks) {
-    this.desktop = desktop; this.tasks = tasks; this.wins = new Map(); this.z = 10; this.active = null;
+  constructor(layers, tasks, opts = {}) {
+    this.layers = layers; this.desktop = layers.float; this.tasks = tasks; this.wins = new Map(); this.z = 10; this.active = null;
+    this.opts = opts; this.saved = new Map(); this.isolated = false;
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       const w = this.top();
-      if (w && w.o.close !== false && w.o.esc !== false) { e.preventDefault(); w.close(); }
+      if (w && w.o.close !== false && w.o.esc !== false) { e.preventDefault(); w.requestClose(); }
     });
+    if (typeof ResizeObserver !== 'undefined') {
+      let raf = 0;
+      this._ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => this.relayout()); });
+      this._ro.observe(layers.float);
+    }
   }
   has(id) { const w = this.wins.get(id); return !!w && !w.closed; }
   get(id) { return this.wins.get(id); }
-  top() { let b = null; for (const w of this.wins.values()) if (!w.minimized && (!b || +w.el.style.zIndex > +b.el.style.zIndex)) b = w; return b; }
+  layerEl(w) { return this.layers[w.layer] || this.layers.float; }
+  policy() { return this.opts.free && !this.opts.free() ? 'contain' : 'free'; }
+  bounds(w) { const l = this.layerEl(w || { layer: 'float' }); return { w: l.clientWidth, h: l.clientHeight }; }
+  _rank(w) { return (w.layer === 'mini' ? 1e6 : 0) + (+w.el.style.zIndex || 0); }
+  top() { let b = null; for (const w of this.wins.values()) if (!w.minimized && (!b || this._rank(w) > this._rank(b))) b = w; return b; }
   hasModal() { for (const w of this.wins.values()) if (w.o.modal) return true; return false; }
+
+  // keep a window reachable: contained windows stay fully inside, free windows keep a grip of their title bar on the desktop
+  clamp(w, x, y) {
+    const B = this.bounds(w), W = w.el.offsetWidth, H = w.el.offsetHeight;
+    if (this.policy() === 'contain') return { x: Math.round(Math.max(0, Math.min(B.w - W, x))), y: Math.round(Math.max(0, Math.min(B.h - H, y))) };
+    const keep = Math.min(KEEP, W);
+    return { x: Math.round(Math.max(-(W - keep), Math.min(B.w - keep, x))), y: Math.round(Math.max(0, Math.min(B.h - Math.min(TITLE_KEEP, H), y))) };
+  }
+  _anchor(w) {
+    const B = this.bounds(w);
+    const a = this.policy() === 'free' && this.opts.anchor ? this.opts.anchor(this.layerEl(w)) : null;
+    return a && a.w > 0 ? a : { x: 0, y: 0, w: B.w, h: B.h };
+  }
+  // size (responsive) + position of one window. Windows the user never moved are re-centred on the game window.
+  place(w) {
+    if (w.maxed || w.closed) return;
+    const B = this.bounds(w), pol = this.policy();
+    const sz = w.size || (w.o.size ? w.o.size(B, pol) : null);
+    if (sz) { w.el.style.setProperty('--w', Math.round(sz.w) + 'px'); if (sz.h) w.el.style.height = Math.round(sz.h) + 'px'; }
+    if (w.size) w.el.style.height = w.size.h + 'px';
+    const W = w.el.offsetWidth, H = w.el.offsetHeight;
+    let p = w.pos[pol];
+    if (!p) {
+      const other = w.pos[pol === 'free' ? 'contain' : 'free'];
+      if (other) p = other; // nearest valid position derived from the other layout (clamped below)
+    }
+    if (!p) {
+      const a = this._anchor(w);
+      let x = a.x + (a.w - W) / 2, y;
+      if (w.o.dock === 'bottom') y = a.y + a.h - H - 8; else y = a.y + (a.h - H) / 2;
+      if (!w.o.modal && !w.o.dock && w.layer === 'float') {
+        const n = [...this.wins.values()].filter((o) => o !== w && !o.closed && o.layer === w.layer && !o.o.modal && !o.o.dock && !o.maxed).length % 6;
+        x += n * 22; y += n * 22 - 22;
+      }
+      p = { x, y };
+    }
+    const c = this.clamp(w, p.x, p.y);
+    w.el.style.left = c.x + 'px'; w.el.style.top = c.y + 'px';
+  }
+  relayout() { for (const w of this.wins.values()) if (!w.closed) { this.place(w); w.o.onResize && w.o.onResize(); } }
+  isolate(on) {
+    this.isolated = on;
+    this.layers.float.inert = on;
+    for (const t of this.tasks.children) t.inert = on && t.dataset.layer !== 'mini';
+  }
+
   open(o) {
     const ex = this.wins.get(o.id);
     if (ex && !ex.closed) {
@@ -189,21 +289,26 @@ export class WindowManager {
       ex.restore(); ex.nudge(); return ex;
     }
     const w = new XPWindow(this, o);
+    const sv = this.saved.get(o.id);
+    if (sv) { w.pos = { ...sv.pos }; w.size = sv.size ? { ...sv.size } : null; }
     this.wins.set(o.id, w);
+    const host = this.layerEl(w);
     if (o.modal) {
       const bd = document.createElement('div'); bd.className = 'xpbackdrop';
       bd.addEventListener('pointerdown', () => w.nudge());
-      this.desktop.appendChild(bd); w.backdrop = bd; w._bdZ = ++this.z; bd.style.zIndex = w._bdZ;
+      host.appendChild(bd); w.backdrop = bd; w._bdZ = ++this.z; bd.style.zIndex = w._bdZ;
     }
-    this.desktop.appendChild(w.el);
+    host.appendChild(w.el);
+    this.place(w);
     if (o.task !== false) {
       const t = document.createElement('button');
-      t.className = 'task'; t.innerHTML = `${icon(o.icon || 'info', 16)}<span>${esc(o.title)}</span>`;
+      t.className = 'task'; t.dataset.win = o.id; t.dataset.layer = w.layer; t.innerHTML = `${icon(o.icon || 'info', 16)}<span>${esc(o.title)}</span>`;
       t.addEventListener('click', () => {
         if (w.minimized) w.restore();
         else if (this.active === w && w.el.classList.contains('xpwin') && !w.o.modal && w.o.min !== false) w.minimize();
         else { this.focus(w); w.nudge(); }
       });
+      if (this.isolated && w.layer !== 'mini') t.inert = true;
       this.tasks.appendChild(t); w.task = t;
     }
     this.focus(w);
@@ -231,6 +336,8 @@ export class WindowManager {
   }
   _remove(w) {
     this.wins.delete(w.id);
+    // remember the last valid position / size so reopening the window puts it back
+    if (w.pos.free || w.pos.contain || w.size) this.saved.set(w.id, { pos: { ...w.pos }, size: w.size ? { ...w.size } : null });
     if (w.task) w.task.remove();
     if (this.active === w) { this.active = null; const t = this.top(); if (t) this.focus(t); }
     this._paint();
@@ -241,9 +348,9 @@ export class WindowManager {
 
 // ---------- XPDialog: message-box style window ----------
 // buttons: [{id,label,def,cls,onClick}] ; resolves via callbacks. kind: info|warn|ask
-export function XPDialog(wm, { id, title, ico = 'info', message = '', extra = '', buttons = [], width = 320, modal = true, onClose, cls = '' }) {
+export function XPDialog(wm, { id, title, ico = 'info', message = '', extra = '', buttons = [], width = 320, modal = true, onClose, cls = '', layer }) {
   const html = `<div class="xprow" style="align-items:flex-start;gap:12px">${icon(ico, 32)}<div class="grow xpt">${message}</div></div>${extra}<div class="xp-btnrow center">${buttons.map((b) => XPButton({ id: b.id, label: b.label, def: b.def, cls: b.cls || '', disabled: b.disabled })).join('')}</div>`;
-  const w = wm.open({ id, title, icon: ico, html, width, modal, onClose, cls, min: false, max: false });
+  const w = wm.open({ id, title, icon: ico, html, width, modal, onClose, cls, layer, min: false, max: false });
   for (const b of buttons) { const el = w.q('#' + b.id); if (el) el.addEventListener('click', () => b.onClick && b.onClick(w)); }
   const d = w.q('.xpbtn.def'); if (d) setTimeout(() => d.focus({ preventScroll: true }), 30);
   return w;

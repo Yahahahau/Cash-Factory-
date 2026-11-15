@@ -89,6 +89,7 @@ export class Presentation {
       s.removeProperty('--ww'); s.removeProperty('--wh'); bs.removeProperty('--bh');
       this.el.win.classList.remove('max');
       this._syncMax();
+      this._bounds(d);
       return;
     }
     const taskbar = parseFloat(getComputedStyle(this.root).getPropertyValue('--taskbar-h')) || 32;
@@ -115,6 +116,22 @@ export class Presentation {
     bs.setProperty('--bh', Math.round(bodyH) + 'px');
     this.el.win.classList.toggle('max', maxed);
     this._syncMax();
+    this._bounds(d);
+  }
+
+  // Movement boundary of the floating window layers. Desktop / landscape tablet: the whole workspace (the wallpaper area),
+  // so windows can leave the game window. Phone portrait: exactly the visible game viewport.
+  _bounds(d) {
+    const w = this.el.work.style;
+    if (d.mode === 'mobile') {
+      const st = document.getElementById('stage');
+      if (st) {
+        const r = st.getBoundingClientRect(), wr = this.el.work.getBoundingClientRect();
+        w.setProperty('--dx', Math.round(r.left - wr.left) + 'px'); w.setProperty('--dy', Math.round(r.top - wr.top) + 'px');
+        w.setProperty('--dw', Math.round(r.width) + 'px'); w.setProperty('--dh', Math.round(r.height) + 'px');
+      }
+    } else for (const k of ['--dx', '--dy', '--dw', '--dh']) w.removeProperty(k);
+    this.onLayout && this.onLayout(d);
   }
 
   _syncMax() {

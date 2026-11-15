@@ -9,7 +9,8 @@ import { GameAudio } from './audio.js';
 import { UI } from './ui.js';
 import { Game } from './game.js';
 import { Embed, BUILD_ID, inIframe } from './embed.js';
-import { showReward, openNewRun } from './screens.js';
+import { openNewRun, rarityOf } from './screens.js';
+import { PauseManager, GS } from './pause.js';
 import { CursorAssistant } from './cursor.js';
 import { Presentation } from './presentation.js';
 import { CursorSprite } from './cursor-sprite.js';
@@ -35,6 +36,9 @@ async function boot() {
 
   let { state, fresh } = Save.load();
   E.normalizeClock(state, Date.now());
+  // a Flying Ball attempt that was interrupted (refresh / crash) is void: it can never pay out afterwards
+  if (state.mini.session) state.mini.session = null;
+  const pause = new PauseManager();
   const canvas = document.getElementById('c');
   const sceneEl = document.getElementById('scene');
   const presentation = new Presentation();
@@ -63,6 +67,7 @@ async function boot() {
     inIframe,
     onClick: () => { audio.unlock(); audio.tap(); },
     onBuy: (key) => {
+      if (pause.frozen) return false;
       audio.unlock();
       const info = E.upgradeInfo(state, key);
       if (info.atMax) { ui.toast('Already at maximum level.', 1500, { title: 'Upgrade', icon: 'warn' }); return false; }
@@ -75,6 +80,7 @@ async function boot() {
       return true;
     },
     onBuyCursor: () => {
+      if (pause.frozen) return false;
       audio.unlock();
       const info = E.cursorInfo(state);
       if (info.owned) return false;
@@ -86,12 +92,14 @@ async function boot() {
       return true;
     },
     onToggleCursor: (on) => {
+      if (pause.frozen) return;
       if (!E.setCursorOn(state, on)) return;
       audio.tap();
       doSave();
       ui.updateCursor();
     },
     onDrop: () => {
+      if (pause.frozen) return false;
       audio.unlock();
       const ok = game.drop();
       if (!ok) audio.deny();
@@ -118,14 +126,17 @@ async function boot() {
     onCheckUpdate: () => embed.check(true),
     // ----- Flying Ball -----
     onMiniStart: () => startMini(),
+    isFrozen: () => pause.frozen,
     onTick: () => audio.tap(),
     onReveal: () => { audio.grade(); },
     // ----- runs -----
     onNewRunOpen: () => {
+      if (pause.frozen) return;
       if (!E.canNewRun(state)) { ui.toast('New Run unlocks at stage ' + E.ECON.run.minStage + '.', 2200, { title: 'New Run', icon: 'flag' }); return; }
       openNewRun(ui, state, E.previewNewRun(state), ui.h);
     },
     onNewRun: () => {
+      if (pause.frozen) return;
       audio.unlock();
       const pv = E.applyNewRun(state);
       game.reset(state);
@@ -142,23 +153,32 @@ async function boot() {
   ui.state = state;
   ui.world = world;
 
-  // ---------- Flying Ball (lazy: the module is only fetched when the player starts it) ----------
-  let miniOpen = false;
+  // ---------- Flying Ball: an exclusive session. The main game is frozen (centralized pause) until the window is closed ----------
   let lastReward = null;
+  let renderDirty = true; // the frozen main scene is redrawn only when needed (resize)
   async function startMini() {
     audio.unlock();
+    if (!pause.running) return;
     const ses = E.startMini(state);
     if (!ses) { ui.toast('Flying Ball is not available right now (boost or cooldown).', 2400, { title: 'Flying Ball', icon: 'warn' }); ui.closeModal(); return; }
-    doSave();
     ui.closeModal();
-    miniOpen = true;
-    const { FlyView } = await import('./flyball.js');
+    pause.enterMini(state); // freeze first: from here no main-game system advances
+    doSave();
+    let FlyView;
+    try { ({ FlyView } = await import('./flyball.js')); } catch (e) {
+      state.mini.session = null;
+      endMini(false);
+      ui.toast('Could not load Flying Ball. Check your connection.', 2600, { title: 'Flying Ball', icon: 'warn' });
+      return;
+    }
     lastReward = null;
     const view = new FlyView(null, {
       wm: ui.wm,
       objective: ses.objective,
       best: state.mini.best,
       audio,
+      onTick: () => audio.tap(),
+      onReveal: () => { audio.grade(); ui.flash(); },
       onFinish: (result) => {
         const r = E.finishMini(state, result);
         if (r.ok) { lastReward = r; ui.updateMini(state); }
@@ -173,15 +193,30 @@ async function boot() {
         doSave();
         return s2.objective;
       },
-      onClose: (won) => {
-        miniOpen = false;
-        last = performance.now();
-        ui.updateMini(state);
-        if (won && lastReward) { showReward(ui, lastReward, ui.h); lastReward = null; }
-      },
+      onClose: () => endMini(true),
     });
     window.__pcf && (window.__pcf.miniView = view);
   }
+  // the mini-game window was closed (only possible once its attempt is settled): hand control back to the main game
+  function endMini(announce) {
+    state.mini.session = null;
+    pause.exitMini(state);
+    ui.updateMini(state);
+    doSave();
+    if (announce && lastReward) {
+      const ra = rarityOf(lastReward.mult);
+      ui.toast(`Profit Boost x${lastReward.mult} (${ra[1]}) is active for ${E.ECON.mini.boostMinutes} minutes.`, 3600, { title: 'Reward', icon: 'trophy' });
+    }
+    lastReward = null;
+  }
+  pause.on((st) => {
+    const on = st === GS.MINIGAME;
+    document.documentElement.classList.toggle('mini-active', on);
+    ui.wm.isolate(on);
+    ui.menu && ui.menu.close();
+    for (const id of ['appwin', 'startBtn', 'cursorBox', 'tray']) { const el = document.getElementById(id); if (el) el.inert = on; }
+    if (on) renderDirty = true;
+  });
 
   // ---------- machine feedback ----------
   machines.onFire = (kind) => {
@@ -229,6 +264,7 @@ async function boot() {
     world.fit(cssW, cssH, aspect);
     game.sceneW = cssW;
     game.sceneH = cssH;
+    renderDirty = true;
     embed && embed.reportSize(window.innerWidth, window.innerHeight);
   }
   const ro = new ResizeObserver(() => applySize());
@@ -247,6 +283,7 @@ async function boot() {
     return Math.floor(cssH * dpr) / (pipeline.rt ? pipeline.rt.height * pipeline.block : 1);
   }
   canvas.addEventListener('pointerdown', (e) => {
+    if (pause.frozen) return;
     audio.unlock();
     if (e.pointerType === 'mouse' && e.button !== 0) return; // only the primary mouse button pokes
     if (ui.sheetKey) { ui.closeSheet(); return; }
@@ -291,7 +328,8 @@ async function boot() {
     audio.setPaused(false);
     last = performance.now();
     E.normalizeClock(state, Date.now());
-    applyOffline();
+    if (pause.running) applyOffline(); // no offline income for time spent inside the exclusive mini-game
+    else state.lastSaved = Date.now();
     lastNow = Date.now();
   }
   document.addEventListener('visibilitychange', () => (document.hidden ? suspend() : resume()));
@@ -319,6 +357,21 @@ async function boot() {
     if (suspendedAt) return;
     const raw = (now - last) / 1000;
     last = now;
+    if (pause.frozen) {
+      // main game frozen: no physics, production, machines, cursor, timers, income or animations. The last frame stays on screen.
+      if (pause.state === GS.RESUMING) {
+        // fresh baselines everywhere, then continue from the exact previous simulation state (no catch-up step)
+        game.rebase();
+        ema = 16; lowFpsTime = 0; slowT = 0; autoSave = 0;
+        lastNow = Date.now();
+        pause.settle();
+      } else {
+        autoSave += Math.min(0.1, raw);
+        if (autoSave >= 5) { autoSave = 0; doSave(); }
+        if (renderDirty) { renderDirty = false; if (state.settings.pixel) pipeline.render(); else world.renderer.render(world.scene, world.camera); }
+      }
+      return;
+    }
     const dt = Math.min(0.05, raw);
     game.update(dt);
     world.syncObjects(physics);
@@ -338,10 +391,8 @@ async function boot() {
     }
     autoSave += dt;
     if (autoSave >= 5) { autoSave = 0; doSave(); }
-    if (!miniOpen) {
-      if (state.settings.pixel) pipeline.render();
-      else world.renderer.render(world.scene, world.camera);
-    }
+    if (state.settings.pixel) pipeline.render();
+    else world.renderer.render(world.scene, world.camera);
 
     // adaptive quality: step down once if the device cannot keep up
     ema += (raw * 1000 - ema) * 0.05;
@@ -354,6 +405,8 @@ async function boot() {
     }
   }
 
+  presentation.onLayout = () => ui.wm.relayout();
+  presentation.evaluate();
   applySize();
   if (!fresh) applyOffline();
   doSave();
@@ -364,7 +417,7 @@ async function boot() {
   embed.start({ w: window.innerWidth, h: window.innerHeight });
 
   // handy for debugging / automated tests
-  window.__pcf = { presentation, cursor, get state() { return state; }, game, world, physics, machines, E, Save, ui, pipeline, audio };
+  window.__pcf = { pause, presentation, cursor, get state() { return state; }, game, world, physics, machines, E, Save, ui, pipeline, audio };
 }
 
 boot().catch((e) => {

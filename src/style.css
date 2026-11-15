@@ -38,13 +38,17 @@ button { cursor: default; border: 0; padding: 0; background: none; }
 /* ---------- app shell: desktop (work area) + taskbar ---------- */
 #app { position: fixed; inset: 0; display: flex; flex-direction: column; }
 #work { position: relative; flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #0b1020; }
-#appwin { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; }
+#appwin { position: relative; z-index: 1; display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; }
 #appbar { display: none; }
 #appbody { position: relative; flex: 1 1 auto; min-height: 0; display: flex; justify-content: center; overflow: hidden; }
 #stage { position: relative; height: 100%; width: min(100%, calc(var(--bh, 100vh) * var(--amax, .62))); display: flex; flex-direction: column; overflow: hidden; background: #10131f; box-shadow: 0 0 0 1px #0831d9, 0 0 24px rgba(0, 20, 80, .5);
   padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
-#desktop { position: absolute; inset: 0; pointer-events: none; z-index: 20; overflow: hidden; }
-#notifs { position: absolute; right: 6px; bottom: 6px; left: 6px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; z-index: 40; }
+/* desktop-level layers: siblings of the game window, so floating windows are never clipped by it. The rect is the movement
+   boundary: the whole workspace on desktop / landscape tablet, the game viewport (set from JS) on phone portrait. */
+.deskrect { position: absolute; left: var(--dx, 0px); top: var(--dy, 0px); width: var(--dw, 100%); height: var(--dh, 100%); pointer-events: none; overflow: hidden; box-sizing: border-box; }
+html[data-mode="mobile"] .deskrect { top: calc(var(--dy, 0px) + env(safe-area-inset-top)); height: calc(var(--dh, 100%) - env(safe-area-inset-top)); }
+#winlayer { z-index: 20; } #minilayer { z-index: 30; }
+#notifs { z-index: 40; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-end; gap: 6px; padding: 6px; }
 /* ---- presentation modes: mobile (default above) | tablet landscape + desktop = XP desktop with the game as a window ---- */
 html[data-mode="tablet"], html[data-mode="desktop"] { --sab: 0px; }
 html[data-mode="tablet"] #work, html[data-mode="desktop"] #work { background: var(--wall, #3a6ea5) center / cover no-repeat; }
@@ -83,14 +87,18 @@ html[data-mode="tablet"] #appwin.max #stage, html[data-mode="desktop"] #appwin.m
 .xpbtn.red { background: linear-gradient(#f4a090, #d85a40 60%, #c0391c); border-color: #6a1408; color: #fff; text-shadow: 0 1px 0 #6a1408; }
 
 /* ---------- window + title bar ---------- */
-.xpwin { position: absolute; inset: 0; margin: auto; width: var(--w, 340px); max-width: calc(100% - 8px); height: fit-content; max-height: calc(100% - 8px);
+.xpwin { position: absolute; left: 0; top: 0; width: var(--w, 340px); max-width: calc(100% - 8px); height: fit-content; max-height: calc(100% - 8px);
   display: flex; flex-direction: column; pointer-events: auto; background: var(--frame); padding: 0 3px 3px; border-radius: 8px 8px 0 0;
   box-shadow: 0 0 0 1px #00138c, 2px 4px 10px rgba(0, 0, 0, .5); transform-origin: 50% 40%; will-change: transform, opacity;
   animation: xp-open var(--t-open) var(--ease-out) both; }
 .xpwin.inactive { background: var(--frame-off); box-shadow: 0 0 0 1px #4a5fb0, 1px 2px 6px rgba(0, 0, 0, .35); }
-.xpwin.dock-bottom { margin-top: auto; margin-bottom: 6px; }
-.xpwin.dragged { inset: auto; margin: 0; }
-.xpwin.max { inset: 0 !important; margin: 0 !important; width: 100% !important; max-width: none; height: 100% !important; max-height: none; border-radius: 0; }
+.xpwin.dragging { will-change: left, top; }
+.xp-rz { position: absolute; z-index: 3; touch-action: none; }
+.xp-rz.e { right: -4px; top: 30px; bottom: 8px; width: 9px; cursor: ew-resize; }
+.xp-rz.s { bottom: -4px; left: 8px; right: 8px; height: 9px; cursor: ns-resize; }
+.xp-rz.se { right: -5px; bottom: -5px; width: 16px; height: 16px; cursor: nwse-resize; }
+.xpwin.max .xp-rz { display: none; }
+.xpwin.max { left: 0 !important; top: 0 !important; width: 100% !important; max-width: none; height: 100% !important; max-height: none; border-radius: 0; }
 .xpwin.closing { animation: xp-close var(--t-close) var(--ease-in) both; pointer-events: none; }
 .xpwin.minimizing { animation: xp-min var(--t-min) var(--ease-in) both; pointer-events: none; }
 .xpwin.restoring { animation: xp-open var(--t-min) var(--ease-out) both; }
@@ -115,6 +123,7 @@ html[data-mode="tablet"] #appwin.max #stage, html[data-mode="desktop"] #appwin.m
 .xp-ctl .xp-close { background-image: var(--glyph), radial-gradient(130% 130% at 22% 18%, #f5ab8e 0%, #e3633f 30%, #d2431f 58%, #b82e10 100%); }
 .xp-ctl button:active { filter: brightness(.82); }
 .xpwin.inactive .xp-ctl button, #appwin.inactive .xp-ctl button { filter: saturate(.5) brightness(1.18); }
+.xp-ctl button:disabled, .xp-ctl button.off { filter: grayscale(.85) brightness(1.15) !important; opacity: .55; pointer-events: none; }
 :where(html.hv) .xp-ctl button:hover { filter: brightness(1.18) saturate(1.1); }
 .xp-ctl button:focus-visible { outline: 1px dotted #fff; outline-offset: 1px; }
 .xp-body { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--face); padding: var(--sp2); display: flex; flex-direction: column; gap: var(--sp2); position: relative; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
@@ -332,7 +341,6 @@ html[data-mode="tablet"] #appwin.max #stage, html[data-mode="desktop"] #appwin.m
 .xpbackdrop { position: absolute; inset: 0; pointer-events: auto; background: rgba(0, 10, 40, .28); animation: xp-reveal var(--t-open) linear both; transition: opacity var(--t-close) linear; }
 .xpwin.nudge .xp-title { animation: xp-nudge 360ms steps(1) 1; }
 @keyframes xp-nudge { 0%, 40%, 80% { background: var(--title-off); } 20%, 60%, 100% { background: var(--title-on); } }
-.xpwin.tall { height: calc(100% - 8px); }
 #clock { font-size: var(--fs); }
 .wi { display: inline-flex; align-items: center; }
 #boostTray { color: #fff; }
@@ -372,3 +380,8 @@ html[data-cursor="custom"] button:disabled { cursor: url('./assets/cursor-auto-p
 .xptip.on { opacity: 1; }
 html:not(.hv) .xptip { display: none; }
 /* tablets / touch: no sticky hover look is ever applied (hover rules require html.hv) */
+
+/* ---------- exclusive mini-game session: the game window stays visible but frozen and inert ---------- */
+html.mini-active #appwin::after { content: ""; position: absolute; inset: 0; z-index: 60; background: rgba(0, 10, 40, .2); pointer-events: none; }
+html.mini-active #startBtn, html.mini-active #cursorBox, html.mini-active #tray { filter: saturate(.55) brightness(.9); pointer-events: none; }
+html.mini-active #tasks .task[data-layer="float"] { filter: saturate(.55) brightness(.9); pointer-events: none; }

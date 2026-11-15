@@ -1,6 +1,9 @@
 // FLYING BALL mini-game: original tap-to-fly arcade game (Canvas 2D, pixel art, independent of the 3D renderer).
 // `FlyCore` is pure game logic (also used by the tests). `FlyView` is the DOM/canvas screen and is loaded lazily.
 import { drawBall, BALL_SIZE } from './sprites.js';
+import * as E from './economy.js';
+import { rarityOf } from './screens.js';
+import { XPDialog } from './xp.js';
 
 export const FLY = { W: 120, H: 208, GROUND: 18, BX: 34, R: 4.6, G: 520, FLAP: -150, MAXV: 240, SPEED0: 44, SPEEDMAX: 66, GAP0: 52, GAPMIN: 42, SPACING: 72, PIPEW: 16, FIRST: 96 };
 const SUB = 1 / 120;
@@ -163,14 +166,16 @@ export class FlyView {
   _build() {
     const wm = this.o.wm;
     this.win = wm.open({
-      id: 'fly', title: 'Flying Ball', icon: 'ball', width: 380, height: 'calc(100% - 8px)', fill: true, cls: 'tall', task: true,
+      id: 'fly', title: 'Flying Ball', icon: 'ball', width: 392, fill: true, task: true, layer: 'mini', min: false, max: false,
+      // an independent application window: it fills the game viewport on a phone and floats on the desktop elsewhere
+      size: (B, pol) => (pol === 'contain' ? { w: B.w - 8, h: B.h - 8 } : { w: Math.min(B.w - 16, 408), h: Math.min(B.h - 16, 760) }),
+      canClose: () => this.canClose(),
       html: `<div class="fly-body">
         <div class="fly-bar"><button class="xpbtn touch" id="mPause" aria-label="Pause" style="min-width:0"><span>Pause</span></button>
           <div class="sc"><b id="mScore">0</b><small id="mObj"></small></div>
           <button class="xpbtn touch" id="mRetryTop" aria-label="Retry" style="min-width:0"><span>Retry</span></button></div>
         <div class="fly-stage" id="mStage"><canvas id="mCanvas" width="${FLY.W}" height="${FLY.H}"></canvas><div class="fly-ov hidden" id="mOv"></div></div></div>`,
       onClose: () => { if (!this.dead) this.close(); },
-      onMinimize: () => this.togglePause(true),
       onResize: () => requestAnimationFrame(() => this._fit()),
     });
     const el = this.win.body;
@@ -183,10 +188,18 @@ export class FlyView {
     this.objEl = el.querySelector('#mObj');
     this.stageEl = el.querySelector('#mStage');
     this._fit();
+    this._syncClose();
     this._ro = new ResizeObserver(() => this._fit());
     this._ro.observe(this.stageEl);
     this._updHud();
   }
+
+  // The window may only be closed before the flight starts or once the attempt is settled (game over / mission complete).
+  // A flight in progress (or paused mid-flight) cannot be abandoned by an accidental title-bar click.
+  canClose() {
+    return this.over || (this.core.state === 'ready' && !this.paused);
+  }
+  _syncClose() { this.win.setCloseEnabled(this.canClose()); }
 
   // integer pixel scale so the art stays perfectly crisp
   _fit() {
@@ -204,6 +217,7 @@ export class FlyView {
       e.preventDefault();
       this.core.flap();
       if (this.ov.dataset.mode === 'intro') this.hideOv();
+      this._syncClose();
     };
     this.stageEl.addEventListener('pointerdown', tap);
     this._key = (e) => {
@@ -238,10 +252,10 @@ export class FlyView {
     this.settled = true;
     this.over = true;
     const res = this._result();
-    this.res = this.o.onFinish(res); // economy verifies + settles the persisted session
+    this.res = this.o.onFinish(res); // economy verifies + settles the persisted session (reward granted exactly once)
     this._updHud();
-    if (win) this.showWin();
-    else setTimeout(() => this.showOver(), 650);
+    if (win && this.res && this.res.ok) this.showWin();
+    else setTimeout(() => this.showOver(win), 650);
   }
 
   showIntro() {
@@ -252,7 +266,8 @@ export class FlyView {
       <div class="xpkv"><span>Best score</span><b>${this.o.best}</b></div>
       <div class="xp-btnrow center"><button class="xpbtn def touch" id="mGo"><span>Tap to start</span></button></div></div></div>`;
     this.ov.classList.remove('hidden');
-    this.ov.querySelector('#mGo').addEventListener('click', () => { this.core.flap(); this.hideOv(); });
+    this._syncClose();
+    this.ov.querySelector('#mGo').addEventListener('click', () => { this.core.flap(); this.hideOv(); this._syncClose(); });
   }
 
   hideOv() {
@@ -260,26 +275,60 @@ export class FlyView {
     this.ov.dataset.mode = '';
   }
 
-  showOver() {
+  showOver(unverified) {
     if (!this.el.isConnected) return;
     this.ov.dataset.mode = 'over';
     const c = this.core;
-    this.ov.innerHTML = `<div class="fly-msg"><div class="xp-title"><span class="xp-ttl">Game Over</span></div><div class="mb">
-      <div class="xph" style="color:var(--warn)">The ball crashed!</div>
+    this.ov.innerHTML = `<div class="fly-msg"><div class="xp-title"><span class="xp-ttl">${unverified ? 'Result' : 'Game Over'}</span></div><div class="mb">
+      <div class="xph" style="color:var(--warn)">${unverified ? 'Result could not be verified' : 'The ball crashed!'}</div>
       <div class="xpkv"><span>Score</span><b>${c.score} / ${c.objective}</b></div>
       <div class="xpkv"><span>Best</span><b>${Math.max(this.o.best, c.score)}</b></div>
       <div class="xps">No reward this time. Try again with no cooldown.</div>
-      <div class="xp-btnrow center"><button class="xpbtn def touch" id="mRetry"><span>Retry</span></button><button class="xpbtn touch" id="mExit"><span>Exit</span></button></div></div></div>`;
+      <div class="xp-btnrow center"><button class="xpbtn def touch" id="mRetry"><span>Retry</span></button><button class="xpbtn touch" id="mExit"><span>Close</span></button></div></div></div>`;
     this.ov.classList.remove('hidden');
+    this._syncClose();
     this.ov.querySelector('#mRetry').addEventListener('click', () => this.retry());
     this.ov.querySelector('#mExit').addEventListener('click', () => this.close());
   }
 
+  // Mission complete: the reward was already settled (once). The window stays open so the result can be read;
+  // the main game resumes only when the player closes it.
   showWin() {
+    const r = this.res, c = this.core;
+    const ra = rarityOf(r.mult);
+    const chance = (E.rewardTable().find((x) => x.mult === r.mult) || { p: 0 }).p;
     this.ov.dataset.mode = 'won';
-    this.ov.innerHTML = `<div class="fly-msg"><div class="xp-title"><span class="xp-ttl">Mission Complete</span></div><div class="mb"><div class="xph" style="color:var(--money)">Mission complete!</div><div class="xps">Rolling your reward...</div><div class="xpprog indet"><i></i></div></div></div>`;
+    this.ov.innerHTML = `<div class="fly-msg"><div class="xp-title"><span class="xp-ttl">Mission Complete</span></div><div class="mb">
+      <div class="xph" style="color:var(--money)">Mission complete!</div>
+      <div class="xpkv"><span>Gates</span><b>${c.score} / ${c.objective}</b></div>
+      <div class="rv-slot"><b id="rvNum">x?</b></div>
+      <div class="xph" id="rvRar" style="text-align:center">&nbsp;</div>
+      <div class="xps" id="rvTxt">Rolling your reward...</div>
+      <div class="xp-btnrow center"><button class="xpbtn touch" id="mDone" disabled><span>Rolling...</span></button></div></div></div>`;
     this.ov.classList.remove('hidden');
-    setTimeout(() => this.close(true), 900);
+    this._syncClose();
+    const num = this.ov.querySelector('#rvNum');
+    const tbl = E.rewardTable();
+    let i = 0, delay = 60;
+    const step = () => {
+      if (this.dead) return;
+      if (i < 14) {
+        num.textContent = 'x' + tbl[Math.floor(Math.random() * tbl.length)].mult; i++;
+        num.classList.remove('tick'); void num.offsetWidth; num.classList.add('tick');
+        this.o.onTick && this.o.onTick();
+        delay *= 1.14;
+        this._rollT = setTimeout(step, delay);
+        return;
+      }
+      num.textContent = 'x' + r.mult; num.className = 'final ' + ra[2];
+      const rr = this.ov.querySelector('#rvRar'); rr.textContent = ra[1]; rr.className = 'xph ' + ra[2]; rr.style.textAlign = 'center';
+      this.ov.querySelector('#rvTxt').textContent = `Profit Boost x${r.mult} for ${E.ECON.mini.boostMinutes} minutes (${chance >= 0.1 ? Math.round(chance * 100) : (chance * 100).toFixed(1).replace(/\.0$/, '')}% chance). It starts when the game resumes.`;
+      const d = this.ov.querySelector('#mDone'); d.disabled = false; d.classList.add('def'); d.querySelector('span').textContent = 'Close';
+      d.addEventListener('click', () => this.close(true));
+      d.focus({ preventScroll: true });
+      this.o.onReveal && this.o.onReveal(r);
+    };
+    this._rollT = setTimeout(step, 250);
   }
 
   manualRetry() {
@@ -298,6 +347,7 @@ export class FlyView {
     this.o.best = Math.max(this.o.best, this.res && this.res.best ? this.res.best : this.o.best);
     this._updHud();
     this.showIntro();
+    this._syncClose();
   }
 
   togglePause(force) {
@@ -307,12 +357,27 @@ export class FlyView {
       this.ov.dataset.mode = 'pause';
       this.ov.innerHTML = `<div class="fly-msg"><div class="xp-title"><span class="xp-ttl">Paused</span></div><div class="mb">
         <div class="xph">Game paused</div>
-        <div class="xp-btnrow center"><button class="xpbtn def touch" id="mResume"><span>Resume</span></button><button class="xpbtn touch" id="mRestart"><span>Restart</span></button></div></div></div>`;
+        <div class="xp-btnrow center"><button class="xpbtn def touch" id="mResume"><span>Resume</span></button><button class="xpbtn touch" id="mRestart"><span>Restart</span></button><button class="xpbtn touch" id="mQuit"><span>Quit</span></button></div></div></div>`;
       this.ov.classList.remove('hidden');
       this.ov.querySelector('#mResume').addEventListener('click', () => this.togglePause(false));
       this.ov.querySelector('#mRestart').addEventListener('click', () => this.manualRetry());
+      this.ov.querySelector('#mQuit').addEventListener('click', () => this.askQuit());
     } else this.hideOv();
+    this._syncClose();
     this.last = performance.now();
+  }
+
+  // explicit quit: confirmed, clearly ends the attempt without a reward
+  askQuit() {
+    if (this.over || this.win.closed) return;
+    XPDialog(this.o.wm, {
+      id: 'flyquit', title: 'Quit Flying Ball?', ico: 'warn', layer: 'mini',
+      message: 'Quitting ends this attempt now. You will <b>not</b> receive a reward and it counts as a failed try. The main game then resumes.',
+      buttons: [
+        { id: 'fqYes', label: 'Quit', onClick: (w) => { w.close(true); this.close(); } },
+        { id: 'fqNo', label: 'Keep playing', def: true, onClick: (w) => w.close(true) },
+      ],
+    });
   }
 
   close(won) {
@@ -323,6 +388,7 @@ export class FlyView {
 
   destroy() {
     cancelAnimationFrame(this.raf);
+    clearTimeout(this._rollT);
     window.removeEventListener('keydown', this._key);
     document.removeEventListener('visibilitychange', this._vis);
     this._ro && this._ro.disconnect();

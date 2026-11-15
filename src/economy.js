@@ -343,6 +343,24 @@ export function incomePerSec(s) {
 export function offlineCapSeconds(s) {
   return Math.min(MAX_OFFLINE_SECONDS_HARD, (2 + 0.2 * s.levels.capacity) * 3600);
 }
+// ---- game clock: while a mini-game session pauses the main game this clock is frozen, so boost / cooldown deadlines
+// cannot expire in the background. Resuming shifts every deadline by the paused duration (remaining time is preserved).
+export const clock = {
+  frozenAt: null,
+  now() { return this.frozenAt === null ? Date.now() : this.frozenAt; },
+  freeze() { if (this.frozenAt === null) this.frozenAt = Date.now(); return this.frozenAt; },
+  // returns the paused duration in ms and shifts the stored deadlines by it
+  thaw(s) {
+    if (this.frozenAt === null) return 0;
+    const d = Math.max(0, Date.now() - this.frozenAt);
+    this.frozenAt = null;
+    if (s) {
+      if (s.boost && s.boost.until) s.boost.until += d;
+      if (s.cooldownUntil) s.cooldownUntil += d;
+    }
+    return d;
+  },
+};
 export function computeOffline(s, now = Date.now()) {
   const elapsed = Math.max(0, (now - (s.lastSaved || now)) / 1000);
   if (elapsed < 30) return null;
@@ -386,10 +404,10 @@ export function fmtDuration(sec) {
 export function permMult(s) {
   return 1 + ECON.run.pointBonus * s.perm.points;
 }
-export function boostMult(s, now = Date.now()) {
+export function boostMult(s, now = clock.now()) {
   return s.boost.mult > 1 && now < s.boost.until ? s.boost.mult : 1;
 }
-export function income(s, base, now = Date.now()) {
+export function income(s, base, now = clock.now()) {
   const mult = boostMult(s, now);
   const final = base * mult * permMult(s);
   return { base, mult, perm: permMult(s), final };
@@ -411,7 +429,7 @@ export function normalizeClock(s, now = Date.now(), ref = s.lastSaved) {
 
 // ---- mini-game: availability / session / reward ----------------------------------------------------------------------
 // ends the boost when its timestamp passed and starts the 30 minute cooldown from the exact end time
-export function expireBoost(s, now = Date.now()) {
+export function expireBoost(s, now = clock.now()) {
   if (s.boost.mult > 1 && now >= s.boost.until) {
     s.cooldownUntil = s.boost.until + ECON.mini.cooldownMinutes * 60000;
     s.boost = { mult: 1, until: 0 };
@@ -419,7 +437,7 @@ export function expireBoost(s, now = Date.now()) {
   }
   return false;
 }
-export function miniStatus(s, now = Date.now()) {
+export function miniStatus(s, now = clock.now()) {
   if (s.boost.mult > 1 && now < s.boost.until) return { state: 'boost', remaining: (s.boost.until - now) / 1000, mult: s.boost.mult };
   if (now < s.cooldownUntil) return { state: 'cooldown', remaining: (s.cooldownUntil - now) / 1000, mult: 1 };
   return { state: 'ready', remaining: 0, mult: 1 };
@@ -437,14 +455,17 @@ export function rollReward(rnd = Math.random) {
   for (const x of t) { r -= x.p; if (r <= 0) return x.mult; }
   return t[t.length - 1].mult;
 }
-export function startMini(s, now = Date.now()) {
-  if (miniStatus(s, now).state !== 'ready') return null;
+export function startMini(s, now) {
+  if (miniStatus(s, now === undefined ? clock.now() : now).state !== 'ready') return null;
+  now = now === undefined ? Date.now() : now; // the session timestamp is real time (it validates the flight duration)
   s.mini.session = { id: Math.random().toString(36).slice(2) + now.toString(36), objective: miniObjective(s), t0: now };
   return s.mini.session;
 }
 // verifies a finished attempt against the persisted session. A session can be settled exactly once, so a refresh or a
 // replayed result can never pay out twice, and a result that was not started here is rejected.
-export function finishMini(s, result, now = Date.now(), rnd = Math.random) {
+export function finishMini(s, result, now, rnd = Math.random) {
+  const real = now === undefined ? Date.now() : now; // real time validates the flight, the game clock times the reward
+  const gnow = now === undefined ? clock.now() : now;
   const ses = s.mini.session;
   if (!ses) return { ok: false, reason: 'no-session' };
   s.mini.session = null;
@@ -453,13 +474,13 @@ export function finishMini(s, result, now = Date.now(), rnd = Math.random) {
   s.mini.gates += score;
   if (score > s.mini.best) s.mini.best = score;
   const dur = result.durationMs || 0;
-  const plausible = dur >= ses.objective * ECON.mini.minMsPerGate && now - ses.t0 >= dur - 3000;
+  const plausible = dur >= ses.objective * ECON.mini.minMsPerGate && real - ses.t0 >= dur - 3000;
   if (score < ses.objective || !plausible) {
     s.mini.fails += 1;
     return { ok: false, reason: score < ses.objective ? 'objective' : 'implausible', score, objective: ses.objective };
   }
   const mult = rollReward(rnd);
-  s.boost = { mult, until: now + ECON.mini.boostMinutes * 60000 };
+  s.boost = { mult, until: gnow + ECON.mini.boostMinutes * 60000 };
   s.cooldownUntil = 0;
   s.mini.wins += 1;
   if (mult > s.mini.bestMult) s.mini.bestMult = mult;
