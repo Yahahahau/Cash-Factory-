@@ -17,6 +17,7 @@ export class LunaWave {
     this.muted = false;
     this.vizMode = 'bars'; // frequency bars only
     this.started = false; // true once the player was used this session
+    this.userPaused = false; // an explicit Pause stops auto-start / auto-resume
     this.status = 'idle'; // idle | loading | playing | paused | error
     this.error = '';
     this.loadedId = null;
@@ -84,12 +85,15 @@ export class LunaWave {
   }
 
   // Web Audio chain, created once from a user gesture: element -> source -> analyser -> gain -> destination
-  _graph() {
+  // `gesture`: called from a user interaction. Without one a new AudioContext starts suspended, and routing the element
+  // through it would make the music silent, so in that case the plain element plays and the graph is built at the first gesture.
+  _graph(gesture = true) {
     if (this.graph !== 'none') return;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) { this.graph = 'failed'; return; }
     try {
       this.ctx = new AC();
+      if (!gesture && this.ctx.state !== 'running') { this.ctx.close && this.ctx.close().catch(() => {}); this.ctx = null; return; }
       const src = this.ctx.createMediaElementSource(this._el());
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 2048; // ~21 Hz bins at 44.1 kHz: enough resolution for the 40-220 Hz band
@@ -127,21 +131,35 @@ export class LunaWave {
     this._save();
     this._emit('track');
   }
-  _start() {
+  _start(gesture = true) {
     const a = this._el();
-    this._graph();
+    this._graph(gesture);
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     const p = a.play();
     if (p && p.catch) p.catch((e) => { if (e && e.name === 'NotAllowedError') { this.status = 'paused'; this._emit('status'); } else if (!(e && e.name === 'AbortError')) this._fail('Could not play this track.'); });
   }
-  play() {
-    this.started = true;
+  play(gesture = true) {
+    this.started = true; this.userPaused = false;
     if (this.loadedId !== this.track.id || !this.audio || this.status === 'error') this._load(this.index);
     else { this.status = this.audio.readyState >= 3 ? this.status : 'loading'; }
-    this._start();
+    this._start(gesture);
     this._emit('status');
   }
-  pause() { if (this.audio) this.audio.pause(); if (this.status !== 'error') this.status = 'paused'; this._emit('status'); }
+  pause() {
+    this.userPaused = true; if (this.audio) this.audio.pause(); if (this.status !== 'error') this.status = 'paused'; this._emit('status'); }
+  // start by itself when the game opens; if the browser blocks audio until a tap, the first interaction starts it
+  autoStart() {
+    const ev = ['pointerdown', 'keydown', 'touchend'];
+    const done = () => { for (const e of ev) window.removeEventListener(e, onGesture, true); };
+    const onGesture = () => {
+      if (this.userPaused) { done(); return; }
+      if (this.status !== 'playing' && this.status !== 'loading') this.play(true);
+      else { this._graph(true); this._wake(); this.audio && this.audio.paused && this._start(true); }
+      if (this.status === 'playing' && (!this.ctx || this.ctx.state === 'running')) done();
+    };
+    for (const e of ev) window.addEventListener(e, onGesture, true);
+    try { this.play(false); } catch (e) { /* wait for the first interaction */ }
+  }
   toggle() { (this.status === 'playing' || this.status === 'loading') ? this.pause() : this.play(); }
   select(i, autoplay = true) { this._load(i); if (autoplay) this._start(); }
   // boundary policy: the playlist loops. Previous restarts the track when it is already past 3 s.

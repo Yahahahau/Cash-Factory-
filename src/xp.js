@@ -18,7 +18,9 @@ export function XPProgressBar(pct, text = '', { cls = '', id = '' } = {}) {
 export function XPPanel(inner, cls = '') { return `<div class="xppanel ${cls}">${inner}</div>`; }
 export function XPGroup(title, inner) { return `<div class="xpgroup"><span class="gt">${title}</span>${inner}</div>`; }
 export function XPTitleBar(title, ico, { min = true, max = true, close = true } = {}) {
-  return `<div class="xp-title">${ico ? icon(ico, 16) : ''}<span class="xp-ttl">${esc(title)}</span><span class="xp-ctl">${min ? '<button class="xp-min" aria-label="Minimize" title="Minimize"></button>' : ''}${max ? '<button class="xp-max" aria-label="Maximize" title="Maximize"></button>' : ''}${close ? '<button class="xp-close" aria-label="Close" title="Close"></button>' : ''}</span></div>`;
+  // the three caption buttons are always drawn, like on a real XP window: the unusable ones are disabled (greyed out, do nothing)
+  const btn = (cls, label, on) => `<button class="${cls}${on ? '' : ' off'}" aria-label="${label}" title="${on ? label : label + ' (unavailable)'}"${on ? '' : ' disabled aria-disabled="true" tabindex="-1"'}></button>`;
+  return `<div class="xp-title">${ico ? icon(ico, 16) : ''}<span class="xp-ttl">${esc(title)}</span><span class="xp-ctl">${btn('xp-min', 'Minimize', min)}${btn('xp-max', 'Maximize', max)}${btn('xp-close', 'Close', close)}</span></div>`;
 }
 export function XPToggle({ id, label, checked = false, radio = false, name = '', value = '' }) {
   return `<label class="xpchk ${radio ? 'radio' : ''}"><input type="${radio ? 'radio' : 'checkbox'}" id="${id}" ${name ? `name="${name}"` : ''} ${value !== '' ? `value="${value}"` : ''} ${checked ? 'checked' : ''}><span class="box"></span><span>${label}</span></label>`;

@@ -110,6 +110,7 @@ async function boot() {
       state.settings[k] = v;
       if (k === 'pixel') applySize();
       else if (k === 'quality') { game.setQuality(QUALITY[v]); world.setQuality(QUALITY[v]); applySize(); }
+      else if (k === 'music') lunawave.setVolume(v);
       else audio.setVolumes(state.settings.sfx, state.settings.music);
       clearTimeout(saveTimer);
       saveTimer = setTimeout(doSave, 400);
@@ -128,6 +129,7 @@ async function boot() {
     // ----- Flying Ball -----
     onMiniStart: () => startMini(),
     isFrozen: () => pause.frozen,
+    getMusicVolume: () => lunawave.volume,
     onTick: () => audio.tap(),
     onReveal: () => { audio.grade(); },
     // ----- runs -----
@@ -154,7 +156,7 @@ async function boot() {
   // LunaWave music: independent of the game loop, pause manager and mini-game sessions
   const lunawave = new LunaWave();
   ui.lunawave = lunawave;
-  lunawave.on(() => { if (lunawave.started) audio.setExternalMusic(true); });
+  lunawave.autoStart(); // the game's music starts by itself (as soon as the browser allows audio)
   ui.state = state;
   ui.world = world;
 

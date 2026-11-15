@@ -9,9 +9,7 @@ export class GameAudio {
     this.nextNote = 0;
     this.timer = null;
     this.paused = false;
-    this.external = false; // LunaWave in use: the built-in chiptune stays silent
   }
-  setExternalMusic(on) { this.external = on; }
 
   unlock() {
     if (!this.ctx) {
@@ -125,25 +123,5 @@ export class GameAudio {
     [659, 784, 988, 1319].forEach((f, i) => this._tone(this.sfxBus, t + i * 0.1, f, 0.2, 'triangle', 0.22));
   }
 
-  _schedule() {
-    if (!this.ctx || this.ctx.state !== 'running' || this.musicVol <= 0 || this.paused || this.external) {
-      if (this.ctx) this.nextNote = Math.max(this.nextNote, this.ctx.currentTime + 0.05);
-      return;
-    }
-    const spb = 0.19; // seconds per 8th note
-    const bass = [130.81, 130.81, 196.0, 196.0, 174.61, 174.61, 196.0, 164.81]; // C C G G F F G E
-    const lead = [
-      [523, 659, 784, 659], [523, 659, 784, 988], [587, 698, 880, 698], [523, 659, 784, 659],
-      [440, 523, 659, 523], [440, 523, 659, 784], [494, 587, 784, 587], [523, 659, 784, 1047],
-    ];
-    while (this.nextNote < this.ctx.currentTime + 0.4) {
-      const s = this.step % 32;
-      const bar = (s / 4) | 0;
-      const beat = s % 4;
-      if (beat === 0) this._tone(this.musicBus, this.nextNote, bass[bar], spb * 3.2, 'triangle', 0.5);
-      this._tone(this.musicBus, this.nextNote, lead[bar][beat], spb * 0.9, 'square', 0.16);
-      this.step++;
-      this.nextNote += spb;
-    }
-  }
+  _schedule() { /* the built-in 8-bit music was removed: LunaWave plays the game's music */ }
 }
