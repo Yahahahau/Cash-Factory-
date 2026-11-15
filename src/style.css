@@ -101,18 +101,21 @@ html[data-mode="tablet"] #appwin.max #stage, html[data-mode="desktop"] #appwin.m
   background: var(--title-on); text-shadow: 1px 1px 0 #0f1089; font-weight: bold; font-size: var(--fs-l); touch-action: none; }
 .xpwin.inactive .xp-title { background: var(--title-off); color: #d8e4f8; text-shadow: none; }
 .xp-ttl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* window control buttons: 21x21 Luna look (white rim, blue glow body, white pixel glyphs) */
 .xp-ctl { display: flex; gap: 2px; flex: 0 0 auto; }
-.xp-ctl button { position: relative; width: 22px; height: 22px; border: 1px solid #fff; border-radius: 3px; background: radial-gradient(circle at 30% 25%, #7fb2ff 0%, #2a6cf0 45%, #0c4fd4 100%); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15); }
-:where(html.hv) .xp-ctl button:hover { filter: brightness(1.15); }
-.xp-ctl button:active { filter: brightness(.85); }
-.xp-ctl .xp-close { background: radial-gradient(circle at 30% 25%, #f6a98e 0%, #dc5a38 45%, #c0391c 100%); }
-.xp-ctl button::before, .xp-ctl button::after { content: ''; position: absolute; background: #fff; }
-.xp-ctl .xp-min::before { left: 5px; bottom: 5px; width: 8px; height: 3px; }
-.xp-ctl .xp-max::before { left: 5px; top: 5px; width: 10px; height: 10px; background: none; border: 1px solid #fff; border-top-width: 3px; }
-.xp-ctl .xp-max.restore::before { left: 7px; top: 4px; width: 8px; height: 8px; }
-.xp-ctl .xp-max.restore::after { left: 4px; top: 7px; width: 8px; height: 8px; background: #1d5be0; border: 1px solid #fff; border-top-width: 3px; }
-.xp-ctl .xp-close::before, .xp-ctl .xp-close::after { left: 9px; top: 4px; width: 2px; height: 12px; transform: rotate(45deg); }
-.xp-ctl .xp-close::after { transform: rotate(-45deg); }
+.xp-ctl button { position: relative; width: 21px; height: 21px; padding: 0; border: 1px solid #fff; border-radius: 3px; background-color: #1f5ee6;
+  background-image: var(--glyph), radial-gradient(130% 130% at 22% 18%, #7eaaff 0%, #3f7ef6 26%, #2160ea 56%, #1650d6 100%); background-repeat: no-repeat; background-size: 100% 100%;
+  box-shadow: inset 0 0 0 1px rgba(110, 160, 255, .55), inset -1px -1px 2px rgba(0, 30, 130, .35); image-rendering: pixelated; }
+.xp-ctl .xp-min { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 21 21'%3E%3Crect x='5' y='13' width='7' height='3' fill='%23fff'/%3E%3C/svg%3E"); }
+.xp-ctl .xp-max { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 21 21'%3E%3Cpath fill-rule='evenodd' fill='%23fff' shape-rendering='crispEdges' d='M5 5h11v11H5zM7 8v6h7V8z'/%3E%3C/svg%3E"); }
+.xp-ctl .xp-max.restore { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 21 21'%3E%3Cpath fill-rule='evenodd' fill='%23fff' shape-rendering='crispEdges' d='M8 4h8v8H8zM10 7v3h4V7z'/%3E%3Crect x='5' y='8' width='8' height='8' fill='%231f5ee6'/%3E%3Cpath fill-rule='evenodd' fill='%23fff' shape-rendering='crispEdges' d='M5 8h8v8H5zM7 11v3h4v-3z'/%3E%3C/svg%3E"); }
+.xp-ctl .xp-close { --glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 21 21'%3E%3Cg stroke='%23fff' stroke-width='2.2' stroke-linecap='square'%3E%3Cpath d='M6 6L15 15M15 6L6 15'/%3E%3C/g%3E%3C/svg%3E"); background-color: #c8401c; background-image: var(--glyph), radial-gradient(130% 130% at 22% 18%, #f5ab8e 0%, #e3633f 30%, #d2431f 58%, #b82e10 100%); box-shadow: inset 0 0 0 1px rgba(255, 170, 130, .5), inset -1px -1px 2px rgba(100, 10, 0, .4); }
+.xp-ctl button { background-image: var(--glyph), radial-gradient(130% 130% at 22% 18%, #7eaaff 0%, #3f7ef6 26%, #2160ea 56%, #1650d6 100%); }
+.xp-ctl .xp-close { background-image: var(--glyph), radial-gradient(130% 130% at 22% 18%, #f5ab8e 0%, #e3633f 30%, #d2431f 58%, #b82e10 100%); }
+.xp-ctl button:active { filter: brightness(.82); }
+.xpwin.inactive .xp-ctl button, #appwin.inactive .xp-ctl button { filter: saturate(.5) brightness(1.18); }
+:where(html.hv) .xp-ctl button:hover { filter: brightness(1.18) saturate(1.1); }
+.xp-ctl button:focus-visible { outline: 1px dotted #fff; outline-offset: 1px; }
 .xp-body { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--face); padding: var(--sp2); display: flex; flex-direction: column; gap: var(--sp2); position: relative; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .xp-body > * { flex: 0 0 auto; }
 .xp-body.fill { padding: 0; gap: 0; overflow: hidden; }
