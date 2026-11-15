@@ -12,7 +12,7 @@ export function mountLunaWave(slot, lw) {
     <canvas class="lw-vis" aria-hidden="true"></canvas>
     <div class="lw-head"><span class="lw-app">${ico('music', 16)}<b>LunaWave Music Player</b></span>
       <span class="lw-badge" hidden title="Real-time audio analysis is not available in this browser">basic mode</span>
-      <button class="lw-b lw-sm" id="lwViz" aria-label="Visualizer style" title="Visualizer: line / bars"></button></div>
+</div>
     <div class="lw-main">
       <div class="lw-art"><img class="lw-img" alt="" draggable="false"><span class="lw-ph">${ico('music', 28)}</span></div>
       <div class="lw-info"><div class="lw-title"></div><div class="lw-comp"></div><div class="lw-stat"></div></div>
@@ -29,7 +29,7 @@ export function mountLunaWave(slot, lw) {
   const root = $('.lw'), cv = $('.lw-vis'), g = cv.getContext('2d');
   const img = $('.lw-img'), art = $('.lw-art');
   const bar = $('.lw-bar'), fill = $('.lw-fill'), knob = $('.lw-knob');
-  let dragging = false, dragT = 0, shown = '', artScale = 1, mix = lw.vizMode === 'bars' ? 1 : 0, W = 0, H = 0, dpr = 1;
+  let dragging = false, dragT = 0, shown = '', artScale = 1, W = 0, H = 0, dpr = 1;
 
   // ---- text / artwork (always updated together on a track change) ----
   const track = () => {
@@ -74,7 +74,6 @@ export function mountLunaWave(slot, lw) {
     $('#lwMute').classList.toggle('on', lw.muted);
   };
   const viz = () => {
-    $('#lwViz').innerHTML = ico(lw.vizMode === 'bars' ? 'bars' : 'wave');
     $('.lw-badge').hidden = lw.realAnalysis || lw.graph === 'none';
   };
 
@@ -85,7 +84,6 @@ export function mountLunaWave(slot, lw) {
   $('#lwRep').addEventListener('click', () => lw.toggleRepeat());
   $('#lwMute').addEventListener('click', () => lw.toggleMute());
   $('#lwVol').addEventListener('input', (e) => lw.setVolume(e.target.value / 100));
-  $('#lwViz').addEventListener('click', () => lw.setViz(lw.vizMode === 'line' ? 'bars' : 'line'));
   const posFrom = (e) => { const r = bar.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * lw.duration; };
   bar.addEventListener('pointerdown', (e) => { if (!(lw.duration > 0)) return; dragging = true; dragT = posFrom(e); bar.setPointerCapture(e.pointerId); time(); });
   bar.addEventListener('pointermove', (e) => { if (dragging) { dragT = posFrom(e); time(); } });
@@ -130,57 +128,33 @@ export function mountLunaWave(slot, lw) {
     for (let i = 0; i < N; i++) { const t = v[i]; prevVals[i] += (t - prevVals[i]) * (t > prevVals[i] ? 0.55 : 0.2); }
     return prevVals;
   };
+  const peaks = new Array(N).fill(0), fall = new Array(N).fill(0);
+  const rr = (x, y, w, h, r) => { // rounded-top bar
+    r = Math.min(r, w / 2, h);
+    g.beginPath(); g.moveTo(x, y + h); g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y); g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r); g.lineTo(x + w, y + h); g.closePath(); g.fill();
+  };
+  // Frequency bars: thin rounded columns in a Luna blue-to-cyan gradient, a soft floor reflection and small falling peak caps.
   const draw = () => {
     if (!W) return;
     g.clearRect(0, 0, W, H);
-    const v = values(), playing = lw.status === 'playing';
-    const target = lw.vizMode === 'bars' ? 1 : 0; mix += (target - mix) * 0.18;
-    const real = lw.realAnalysis;
-    const energy = real ? lw.level.all : 0;
-    const base = H * 0.5;
-    const tint = (a) => `rgba(120,215,255,${a})`;
-    // --- bars (bottom-anchored, thin, rounded) ---
-    if (mix > 0.02) {
-      const bw = W / N, gap = Math.max(1, bw * 0.38);
-      const gr = g.createLinearGradient(0, H, 0, H * 0.15); gr.addColorStop(0, `rgba(38,140,255,${0.5 * mix})`); gr.addColorStop(1, `rgba(140,235,255,${0.8 * mix})`);
-      g.fillStyle = gr;
-      for (let i = 0; i < N; i++) {
-        const h = Math.max(2 * dpr, Math.pow(v[i], 0.9) * H * 0.78);
-        g.fillRect(i * bw + gap / 2, H - h, bw - gap, h);
-      }
+    const v = values(), playing = lw.status === 'playing', real = lw.realAnalysis;
+    const floor = H * 0.8, maxH = floor - H * 0.08;
+    const bw = W / N, gap = Math.max(1.5 * dpr, bw * 0.34), w = bw - gap;
+    const gr = g.createLinearGradient(0, floor, 0, floor - maxH);
+    gr.addColorStop(0, 'rgba(24,110,235,.55)'); gr.addColorStop(0.55, 'rgba(70,175,255,.75)'); gr.addColorStop(1, 'rgba(170,240,255,.95)');
+    const rf = g.createLinearGradient(0, floor, 0, H); rf.addColorStop(0, 'rgba(90,180,255,.22)'); rf.addColorStop(1, 'rgba(90,180,255,0)');
+    for (let i = 0; i < N; i++) {
+      const tall = Math.max(2 * dpr, Math.pow(v[i], 1.05) * maxH);
+      const x = i * bw + gap / 2;
+      g.fillStyle = gr; rr(x, floor - tall, w, tall, w / 2);
+      g.fillStyle = rf; g.fillRect(x, floor + 1, w, Math.min(H - floor, tall * 0.28)); // reflection
+      // peak cap: rises with the bar, then falls slowly
+      if (tall > peaks[i]) { peaks[i] = tall; fall[i] = 0; } else { fall[i] += 0.35 * dpr; peaks[i] = Math.max(tall, peaks[i] - fall[i]); }
+      if (peaks[i] > 4 * dpr) { g.fillStyle = 'rgba(225,250,255,.9)'; g.fillRect(x, floor - peaks[i] - 3 * dpr, w, Math.max(1.5, dpr)); }
     }
-    // --- luminous lines: spectrum mirrored around the middle + the live waveform ---
-    if (mix < 0.98) {
-      const A = 1 - mix, amp = H * 0.4;
-      const line = (fn, w, col, blur) => {
-        g.beginPath();
-        for (let i = 0; i <= N; i++) {
-          const x = (i / N) * W, y = fn(Math.min(i, N - 1));
-          if (i === 0) g.moveTo(x, y); else { const px = ((i - 0.5) / N) * W; g.quadraticCurveTo(((i - 1) / N) * W, fn(Math.max(0, i - 1)), px, (y + fn(Math.max(0, i - 1))) / 2); }
-        }
-        g.lineWidth = w * dpr; g.strokeStyle = col; g.globalAlpha = A; g.stroke();
-        void blur;
-      };
-      const peak = (i) => Math.pow(v[i], 0.85) * amp * (0.5 + 0.5 * Math.sin(Math.PI * (i / N) * 0.9 + 0.2));
-      // glow pass (wide, faint) then crisp pass
-      line((i) => base - peak(i) - 1, 5, tint(0.12), 0); line((i) => base - peak(i) - 1, 1.2, tint(0.85), 0);
-      line((i) => base + peak(i) * 0.7 + 1, 4, 'rgba(70,160,255,.1)', 0); line((i) => base + peak(i) * 0.7 + 1, 1, 'rgba(90,175,255,.55)', 0);
-      const t = real ? lw.waveform() : null;
-      if (t) {
-        g.beginPath();
-        const step = Math.floor(t.length / 120) || 1;
-        for (let i = 0, k = 0; i < t.length; i += step, k++) {
-          const x = (i / t.length) * W, y = base + ((t[i] - 128) / 128) * H * 0.3;
-          if (k === 0) g.moveTo(x, y); else g.lineTo(x, y);
-        }
-        g.lineWidth = 1 * dpr; g.strokeStyle = 'rgba(210,245,255,.5)'; g.globalAlpha = A; g.stroke();
-      } else if (!real || !playing) {
-        g.beginPath(); g.moveTo(0, base); g.lineTo(W, base); g.lineWidth = dpr; g.strokeStyle = tint(0.25); g.globalAlpha = A; g.stroke();
-      }
-    }
-    g.globalAlpha = 1;
-    // soft light that breathes with the overall energy
-    if (energy > 0.02) { const rg = g.createRadialGradient(W * 0.2, H * 0.5, 0, W * 0.2, H * 0.5, W * 0.7); rg.addColorStop(0, `rgba(80,190,255,${Math.min(0.22, energy * 0.35)})`); rg.addColorStop(1, 'rgba(80,190,255,0)'); g.fillStyle = rg; g.fillRect(0, 0, W, H); }
+    g.fillStyle = 'rgba(160,215,255,.35)'; g.fillRect(0, floor, W, Math.max(1, dpr)); // floor line
+    const energy = real && playing ? lw.level.all : 0;
+    if (energy > 0.02) { const rg = g.createRadialGradient(W * 0.5, floor, 0, W * 0.5, floor, W * 0.65); rg.addColorStop(0, `rgba(80,190,255,${Math.min(0.2, energy * 0.3)})`); rg.addColorStop(1, 'rgba(80,190,255,0)'); g.fillStyle = rg; g.fillRect(0, 0, W, H); }
   };
   // album art beat pulse: only from real audio analysis, small, centred, no rotation
   const pulse = () => {

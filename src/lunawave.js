@@ -14,7 +14,7 @@ export class LunaWave {
     this.repeat = false;
     this.volume = 0.7;
     this.muted = false;
-    this.vizMode = 'line'; // line | bars
+    this.vizMode = 'bars'; // frequency bars only
     this.started = false; // true once the player was used this session
     this.status = 'idle'; // idle | loading | playing | paused | error
     this.error = '';
@@ -55,7 +55,6 @@ export class LunaWave {
       this.repeat = !!j.repeat;
       if (typeof j.volume === 'number') this.volume = clamp(j.volume, 0, 1);
       this.muted = !!j.muted;
-      if (j.viz === 'bars' || j.viz === 'line') this.vizMode = j.viz;
     } catch (e) { /* storage unavailable */ }
   }
   _save() {

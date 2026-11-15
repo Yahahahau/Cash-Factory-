@@ -392,7 +392,7 @@ html.mini-active #tasks .task[data-layer="float"] { filter: saturate(.55) bright
 .lw { position: relative; overflow: hidden; border: 1px solid #0a246a; border-radius: 4px; color: #eaf4ff; padding: 5px 6px 6px; display: flex; flex-direction: column; gap: 4px;
   background: radial-gradient(120% 140% at 15% 0%, #1d56c8 0%, #0e3a96 45%, #071f5e 100%); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18), inset 0 1px 6px rgba(0, 0, 40, .5); }
 .lw > :not(.lw-vis) { position: relative; z-index: 1; }
-.lw-vis { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; opacity: .9; }
+.lw-vis { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; opacity: .72; }
 .lw-head { display: flex; align-items: center; gap: 6px; min-height: 18px; }
 .lw-app { display: flex; align-items: center; gap: 5px; flex: 1 1 auto; min-width: 0; font-size: var(--fs); text-shadow: 1px 1px 0 #051a55; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lw-app b { overflow: hidden; text-overflow: ellipsis; }
