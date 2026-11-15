@@ -55,6 +55,8 @@ export function sanitize(raw) {
   const bm = num(bo.mult, 1, 1, maxMult);
   const bu = typeof bo.until === 'number' && isFinite(bo.until) && bo.until > 0 && bo.until <= horizon ? bo.until : 0;
   s.boost = bm > 1 && bu ? { mult: bm, until: bu } : { mult: 1, until: 0 };
+  const cu = raw.cursor || {};
+  s.cursor = { owned: cu.owned === true, on: cu.on !== false };
   s.cooldownUntil = num(raw.cooldownUntil, 0, 0, horizon + 3600000);
   const mi = raw.mini || {};
   for (const k of ['best', 'plays', 'wins', 'fails', 'gates', 'bestMult']) s.mini[k] = Math.floor(num(mi[k], 0));

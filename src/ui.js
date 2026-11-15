@@ -1,9 +1,10 @@
 import * as E from './economy.js';
 import { paintBall } from './sprites.js';
 import { icon } from './icons.js';
-import { WindowManager, XPNotification, StartMenu, XPDialog, XPButton, esc, setProgress } from './xp.js';
+import { WindowManager, XPNotification, StartMenu, XPDialog, XPButton, XPToggle, esc, setProgress } from './xp.js';
 import { openMini, openBoost, tickMini } from './screens.js';
 import { openSettings, renderUpgrade } from './xp-panels.js';
+import { CURSOR_ASSETS, CURSOR_ICON_CROP } from './cursor-sprite.js';
 
 export class UI {
   constructor(h) {
@@ -22,6 +23,8 @@ export class UI {
     this._bind();
     this._floats();
     this._tray();
+    this.cursorStatus = 'READY';
+    this._cursorIcon();
   }
 
   _grab() {
@@ -33,6 +36,7 @@ export class UI {
       rateBtn: g('rateBtn'), ratePrice: g('ratePrice'), rateLv: g('rateLv'), rateInfo: g('rateInfo'),
       padCap: g('padCap'), padRare: g('padRare'),
       miniBtn: g('miniBtn'), miniIco: g('miniIco'), miniTxt: g('miniTxt'), miniSub: g('miniSub'), runBtn: g('runBtn'), runChip: g('runChip'), boostChip: g('boostChip'),
+      cursorBtn: g('cursorBtn'), cursorTog: g('cursorTog'), cursorTxt: g('cursorTxt'), cursorIco: g('cursorIco'),
       profit: g('profitMult'), startBtn: g('startBtn'), boostTray: g('boostTray'), trayTxt: g('trayTxt'), clock: g('clock'), app: g('app'),
     };
   }
@@ -52,7 +56,62 @@ export class UI {
     bindBtn(this.el.drop, () => { this.h.onDrop(); });
     bindBtn(this.el.rateBtn, () => { this.h.onBuy('rate'); });
     for (const p of [this.el.padCap, this.el.padRare]) bindBtn(p, () => { this.h.onClick(); this.openSheet(p.dataset.key); });
+    bindBtn(this.el.cursorBtn, () => { this.h.onClick(); this.openCursor(); });
+    bindBtn(this.el.cursorTog, () => { this.h.onToggleCursor(!this.state.cursor.on); });
     this.menu = new StartMenu(this.el.startBtn, this.el.app, () => this._menuItems(), XPButton({ id: 'smOff', label: 'Close menu', ico: 'power' }));
+  }
+
+  // ---------- CURSOR AUTO PUSH COIN (toolbar button + info window) ----------
+  _cursorIcon() {
+    const draw = (cv, scale) => {
+      const im = new Image();
+      im.onload = () => { const g = cv.getContext('2d'); g.imageSmoothingEnabled = false; const c = CURSOR_ICON_CROP; g.clearRect(0, 0, cv.width, cv.height); g.drawImage(im, c.x, c.y, c.w, c.h, 0, 0, c.w, c.h); };
+      im.src = CURSOR_ASSETS.arrow;
+    };
+    draw(this.el.cursorIco);
+    this._cursorIconDraw = draw;
+  }
+
+  setCursorStatus(st) { this.cursorStatus = st; this.updateCursor(); }
+
+  updateCursor() {
+    const s = this.state;
+    if (!s) return;
+    const ci = E.cursorInfo(s);
+    const busy = !['READY', 'IDLE'].includes(this.cursorStatus);
+    const b = this.el.cursorBtn, tog = this.el.cursorTog;
+    const txt = !ci.owned ? '$' + E.fmtCash(ci.cost) : ci.on ? this.cursorStatus : 'OFF';
+    this.setText('cursorTxt', this.el.cursorTxt, txt);
+    const cls = !ci.owned ? (ci.canBuy ? '' : 'poor') : !ci.on ? 'off' : busy ? 'live busy' : 'live';
+    if (this.cache.curCls !== cls) { this.cache.curCls = cls; b.className = cls; }
+    tog.classList.toggle('hidden', !ci.owned);
+    tog.classList.toggle('off', !ci.on);
+    this.setText('cursorTog', tog, ci.on ? 'ON' : 'OFF');
+    b.title = `CURSOR AUTO PUSH COIN\nAutomatic stuck coin assistance.\n` + (ci.owned ? `Owned | ${ci.on ? 'ON' : 'OFF'} | ${this.cursorStatus}` : ci.canBuy ? `Price $${E.fmtCash(ci.cost)}` : `Price $${E.fmtCash(ci.cost)} (need $${E.fmtCash(ci.missing)} more)`);
+    this._cursorWin(ci);
+  }
+
+  openCursor() { this._cursorSig = null; this._cursorWin(E.cursorInfo(this.state), true); }
+
+  _cursorWin(ci, open) {
+    let w = this.wm.get('cursor');
+    if (!w || w.closed) { if (!open) return; w = null; }
+    const sig = [ci.owned, ci.on, ci.cost, ci.canBuy].join('|');
+    if (w && this._cursorSig === sig) { const st = w.q('#cuStat'); if (st) st.textContent = this.cursorStatus; return; }
+    this._cursorSig = sig;
+    const kv = (a, b, c = '') => `<div class="xpkv ${c}"><span>${a}</span><b>${b}</b></div>`;
+    const buy = ci.owned ? '' : XPButton({ id: 'cuBuy', label: ci.canBuy ? `Buy &nbsp;$${E.fmtCash(ci.cost)}` : `Need $${E.fmtCash(ci.missing)} more`, def: ci.canBuy, disabled: !ci.canBuy, cls: 'touch green' });
+    const html = `<div class="xprow"><div class="xpico-lg"><canvas class="cur-win-ico" id="cuIco" width="12" height="22"></canvas></div><div class="grow"><div class="xph">CURSOR AUTO PUSH COIN</div><div class="xps">Automatic stuck coin assistance.</div></div></div>
+      <div class="xpt">A small pointer watches the machine. When a coin stays stuck for a few seconds, it slides in from the edge of the screen, gives it a gentle real push, then leaves.</div>
+      ${ci.owned ? '' : kv('Price', '$' + E.fmtCash(ci.cost), 'money')}${kv('Ownership', ci.owned ? 'Owned (this run)' : 'Not owned')}${ci.owned ? kv('Status', '<span id="cuStat">' + this.cursorStatus + '</span>') : ''}
+      ${ci.owned ? `<div class="xpgroup"><span class="gt">Assistant</span>${XPToggle({ id: 'cuOn', label: 'Enabled (ON / OFF)', checked: ci.on })}</div>` : ''}
+      <div class="xps">Per-run upgrade: it resets when you start a new run.</div>
+      <div class="xp-btnrow">${buy}${XPButton({ id: 'cuClose', label: 'Close', cls: 'touch', def: ci.owned })}</div>`;
+    w = this.wm.open({ id: 'cursor', title: 'Cursor Auto Push Coin', icon: 'mouse', width: 320, html, max: false });
+    const cv = w.q('#cuIco'); if (cv) this._cursorIconDraw(cv);
+    w.q('#cuClose').addEventListener('click', () => { this.h.onClick(); w.close(); });
+    const bb = w.q('#cuBuy'); if (bb) bb.addEventListener('click', () => { this.h.onBuyCursor(); });
+    const on = w.q('#cuOn'); if (on) on.addEventListener('change', () => this.h.onToggleCursor(on.checked));
   }
 
   _menuItems() {
@@ -63,6 +122,7 @@ export class UI {
       { key: 'boost', icon: 'boost', label: 'Profit Boost', sub: st.state === 'boost' ? 'x' + st.mult + ' active' : 'Not active', run: () => openBoost(this, this.state, this.h) },
       { key: 'run', icon: 'flag', label: 'New Run', sub: E.canNewRun(s) ? 'Available' : 'Unlocks at stage ' + E.ECON.run.minStage, disabled: !E.canNewRun(s), run: () => this.h.onNewRunOpen() },
       '-',
+      { key: 'cur', icon: 'mouse', label: 'Cursor Auto Push Coin', sub: this.state.cursor.owned ? (this.state.cursor.on ? 'ON' : 'OFF') : '$' + E.fmtCash(E.cursorCost(this.state)), run: () => this.openCursor() },
       { key: 'set', icon: 'gear', label: 'Settings', run: () => openSettings(this, 0) },
       { key: 'stat', icon: 'chart', label: 'Statistics', run: () => openSettings(this, 6) },
       { key: 'upd', icon: 'disk', label: 'Check for updates', run: () => { this.h.onCheckUpdate(); this.toast('Checking for a new version...', 2000, { title: 'Update' }); } },
@@ -185,6 +245,7 @@ export class UI {
       p.classList.toggle('ready', info.canBuy);
     }
     renderUpgrade(this, false);
+    this.updateCursor();
     this.updateMini(s);
   }
 

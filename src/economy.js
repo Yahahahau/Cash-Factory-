@@ -37,6 +37,23 @@ export const ECON = {
       { mult: 256, p: 1 },
     ],
   },
+  // CURSOR AUTO PUSH COIN (per-run upgrade). Every threshold of the stuck-coin detector / assistant lives here.
+  cursor: {
+    price: 500, // base price (scaled by the same dynamic run/wallet price multiplier as every other upgrade)
+    stuckSeconds: 3.5, // a coin must stay almost motionless this long inside a watched passage
+    linSpeed: 0.12, // m/s below which a coin counts as motionless
+    angSpeed: 0.6, // rad/s
+    scanInterval: 0.2, // s between obstruction scans
+    resolveSpeed: 0.6, // m/s: a target that moves faster than this is considered freed
+    taskCooldown: 4, // s between successful assists
+    failCooldown: 12, // s after a failed task
+    ignoreAfterAssist: 8, // s a helped coin is left alone
+    ignoreAfterFail: 20,
+    maxAttempts: 3,
+    strokeMaxSpeed: 3.2, // m/s peak speed of the physical helper (never launches coins)
+    observeSeconds: 0.9,
+    successDisplacement: 0.45,
+  },
   multiplyStageReward: false, // stage-clear cash/gems are never boosted
 };
 
@@ -87,6 +104,7 @@ export function newState() {
     cooldownUntil: 0, // mini-game locked until this timestamp (ms)
     mini: { best: 0, plays: 0, wins: 0, fails: 0, gates: 0, bestMult: 0, session: null },
     levels: { rate: 0, capacity: 0, rare: 0 },
+    cursor: { owned: false, on: true }, // CURSOR AUTO PUSH COIN (per run)
     machines,
     stats: {
       totalEarned: 0,
@@ -232,6 +250,30 @@ export function buyUpgrade(s, key) {
   else s.levels[key] += 1;
   s.stats.upgradesBought += 1;
   refreshTier(s);
+  return true;
+}
+
+// ---- CURSOR AUTO PUSH COIN ----------------------------------------------------
+export function cursorCost(s) {
+  return Math.ceil(ECON.cursor.price * priceMult(s));
+}
+export function cursorInfo(s) {
+  const cost = cursorCost(s);
+  return { owned: !!s.cursor.owned, on: !!s.cursor.on, cost, canBuy: !s.cursor.owned && s.cash >= cost, missing: Math.max(0, cost - s.cash) };
+}
+export function buyCursor(s) {
+  const info = cursorInfo(s);
+  if (!info.canBuy) return false;
+  s.cash -= info.cost;
+  s.cursor.owned = true;
+  s.cursor.on = true;
+  s.stats.upgradesBought += 1;
+  refreshTier(s);
+  return true;
+}
+export function setCursorOn(s, on) {
+  if (!s.cursor.owned) return false;
+  s.cursor.on = !!on;
   return true;
 }
 
@@ -473,6 +515,7 @@ export function applyNewRun(s) {
   s.progress = 0;
   s.priceTier = 0;
   s.levels = { rate: 0, capacity: 0, rare: 0 };
+  s.cursor = { owned: false, on: true };
   s.machines = nm;
   s.runStats = { earned: 0, coins: 0 };
   checkAchievements(s);

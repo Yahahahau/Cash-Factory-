@@ -40,6 +40,7 @@ export class Game {
   loadStage(animate) {
     const def = getStage(this.state.stage);
     this.stageDef = def;
+    this.cursor && this.cursor.cancel();
     this.physics.clear();
     this.physics.buildStage(def);
     this.machines.setStage(def);
@@ -147,6 +148,7 @@ export class Game {
 
     // ---- anti-jam monitoring
     this.machines.scan(dt);
+    if (this.cursor) this.cursor.update(dt);
 
     // ---- grinder animation
     const sucking = this.physics.sucking;

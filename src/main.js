@@ -10,6 +10,8 @@ import { UI } from './ui.js';
 import { Game } from './game.js';
 import { Embed, BUILD_ID, inIframe } from './embed.js';
 import { showReward, openNewRun } from './screens.js';
+import { CursorAssistant } from './cursor.js';
+import { CursorSprite } from './cursor-sprite.js';
 
 const QUALITY = {
   low: { limit: 50, rows: 330, dpr: 1.5, shadows: false, shadowMap: 512 },
@@ -69,6 +71,23 @@ async function boot() {
       if (key === 'capacity') game.charges = Math.min(E.maxCharges(state), game.charges);
       doSave();
       return true;
+    },
+    onBuyCursor: () => {
+      audio.unlock();
+      const info = E.cursorInfo(state);
+      if (info.owned) return false;
+      if (!E.buyCursor(state)) { audio.deny(); ui.toast(`Need $${E.fmtCash(info.missing)} more.`, 1800, { title: 'Cursor Auto Push Coin', icon: 'warn' }); return false; }
+      audio.buy();
+      doSave();
+      ui.toast('Cursor Auto Push Coin is now active for this run.', 2800, { title: 'Purchased', icon: 'check' });
+      ui.updateCursor();
+      return true;
+    },
+    onToggleCursor: (on) => {
+      if (!E.setCursorOn(state, on)) return;
+      audio.tap();
+      doSave();
+      ui.updateCursor();
     },
     onDrop: () => {
       audio.unlock();
@@ -172,7 +191,19 @@ async function boot() {
   machines.onLaunch = (x, y) => { world.particles.emit(x, y, 0.6, 6, { color: [0xff9e1a, 0xfff2b0], speed: 2.5, life: 0.4, gravity: 4, size: 0.1, up: 0.8 }); audio.clunk(); };
   machines.onShake = () => { world.shake = 1; audio.clunk(); };
 
+  const sprite = new CursorSprite(sceneEl);
   game = new Game({ state, physics, machines, world, audio, ui });
+  const cursor = new CursorAssistant({
+    physics,
+    getDef: () => game.stageDef,
+    project: (x, y) => world.project(x, y, 0, game.sceneW, game.sceneH),
+    getSize: () => ({ w: game.sceneW, h: game.sceneH }),
+    getState: () => state.cursor,
+    onSprite: (s) => sprite.set(s),
+    onStatus: (st) => ui.setCursorStatus(st),
+  });
+  physics.helperUpdate = (dt) => cursor.stepHelper(dt);
+  game.cursor = cursor;
   game.setQuality(QUALITY[state.settings.quality]);
   world.setQuality(QUALITY[state.settings.quality]);
   game.loadStage(false);
@@ -329,7 +360,7 @@ async function boot() {
   embed.start({ w: window.innerWidth, h: window.innerHeight });
 
   // handy for debugging / automated tests
-  window.__pcf = { get state() { return state; }, game, world, physics, machines, E, Save, ui, pipeline, audio };
+  window.__pcf = { cursor, get state() { return state; }, game, world, physics, machines, E, Save, ui, pipeline, audio };
 }
 
 boot().catch((e) => {

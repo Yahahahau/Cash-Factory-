@@ -50,6 +50,8 @@ export class Physics {
     this.active = []; // slot indices in play (state 1)
     this.sucking = []; // slot indices being swallowed by the grinder (state 2, visual only)
     this.beforeStep = null; // hook (dt): machines drive pistons / apply forces
+    this.helperUpdate = null; // hook (dt): the cursor assistant moves its kinematic helper collider each fixed step
+    this.helper = null;
     this.stage = null;
     this.statics = [];
     this._buildPool();
@@ -102,7 +104,7 @@ export class Physics {
         body
       );
       body.setEnabled(false);
-      this.slots.push({ body, collider, state: 0, type: 0, shape: 0, mult: 1, born: 0, sx: 0, sy: 0, sz: 0, st: 0, q: null, lowT: 0, grace: 0, helped: 0 });
+      this.slots.push({ body, collider, state: 0, type: 0, shape: 0, mult: 1, born: 0, sx: 0, sy: 0, sz: 0, st: 0, q: null, lowT: 0, grace: 0, helped: 0, cSince: -1, cIgn: 0 });
       this.free.push(i);
     }
   }
@@ -123,6 +125,8 @@ export class Physics {
     s.lowT = 0;
     s.grace = 0;
     s.helped = 0;
+    s.cSince = -1;
+    s.cIgn = 0;
     s.gated = false;
     if (s.shape !== type) {
       const cs = colliderSize(type);
@@ -178,10 +182,41 @@ export class Physics {
     this.free.push(idx);
   }
 
+  // Small kinematic collider that belongs to the cursor assistant. It only exists while a stroke is running and collides with
+  // coins only, so coins are moved by genuine contact forces (never by editing their positions).
+  setHelper(on, x = 0, y = 0) {
+    if (!this.helper) {
+      const R = RAPIER;
+      const body = this.world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(PARK.x, PARK.y, PARK.z));
+      const collider = this.world.createCollider(R.ColliderDesc.cuboid(0.1, 0.2, 0.4).setCollisionGroups(GROUPS.push).setFriction(0.3).setRestitution(0.05), body);
+      body.setEnabled(false);
+      this.helper = { body, collider, on: false };
+    }
+    const h = this.helper;
+    if (on) {
+      h.body.setEnabled(true);
+      h.body.setTranslation({ x, y, z: 0 }, true);
+      h.body.setNextKinematicTranslation({ x, y, z: 0 });
+    } else {
+      h.body.setEnabled(false);
+      h.body.setTranslation(PARK, false);
+    }
+    h.on = on;
+    h.x = x; h.y = y;
+  }
+
+  moveHelper(x, y) {
+    const h = this.helper;
+    if (!h || !h.on) return;
+    h.body.setNextKinematicTranslation({ x, y, z: 0 });
+    h.x = x; h.y = y;
+  }
+
   // one fixed step; returns the slots that reached the grinder and the ones that escaped the machine (safety net)
   step(dt) {
     this.time += dt;
     if (this.beforeStep) this.beforeStep(dt);
+    if (this.helperUpdate) this.helperUpdate(dt);
     this.world.step();
     const collected = [];
     const escaped = [];

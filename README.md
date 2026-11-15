@@ -95,3 +95,9 @@ src/game.js      ลูปเกม ผลิต/เก็บ/เงิน      
 - **รายได้**: ทุกการเก็บเหรียญ/ออฟไลน์ผ่าน `E.income()` จุดเดียว บูสต์ไม่คูณเพชร ราคาอัปเกรด รางวัลผ่านด่าน หรือเงินที่มีอยู่
 - **UI แบบ Windows XP Luna**: คอมโพเนนต์/WindowManager/Taskbar/Start menu/Notification ใน `src/xp.js`, หน้าต่างอัปเกรด+ตั้งค่าใน `src/xp-panels.js`, หน้าจอเกมใน `src/screens.js`, ไอคอน SVG ใน `src/icons.js`, tokens + animation ใน `src/style.css`, ฟอนต์ `src/fonts/windows-xp.otf` (ใช้ฟอนต์นี้ฟอนต์เดียว)
 - เวลา: ไม่มีบริการเวลาฝั่งเซิร์ฟเวอร์ใน Rezona จึงใช้เวลาเครื่อง ถ้านาฬิกาถูกย้อนหลังจะเลื่อนเวลาหมดอายุตามเพื่อไม่ให้ได้เวลาเพิ่ม
+
+## CURSOR AUTO PUSH COIN (per-run upgrade)
+- Toolbar button (taskbar) + info window; price `ECON.cursor.price` ($500, scaled by the dynamic price multiplier); resets on New Run; saved in `state.cursor`.
+- `src/cursor.js`: stuck-coin detector (thresholds in `ECON.cursor`), target scoring, human-like motion model (min-jerk speed, curved Bezier paths, endpoint scatter, overshoot, micro corrections, pauses), state machine (READY / DETECTING / APPROACHING / PUSHING / ASSISTING / RETURNING / IDLE), physical help through a kinematic helper collider (`Physics.setHelper`, coins only).
+- `src/cursor-sprite.js`: draws the supplied artwork (`public/assets/cursor-auto-push.png`, `cursor-auto-push-link.png`) crisply at whole device pixels; hotspot constants live there. Replace the PNGs to change the artwork.
+- Tests: `npm test` (economy/save) and `npm run test:physics` (detection, motion, push, cancel, failure).

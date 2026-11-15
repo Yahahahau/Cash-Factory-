@@ -247,4 +247,27 @@ t('save v3: round trip + old v2 save (no new fields) loads with safe defaults + 
   eq(evil.boost.mult, 1, 'boost with absurd expiry dropped'); eq(evil.run, 1); eq(evil.perm.points, 0); eq(evil.perm.achievements.length, 1);
 });
 
+
+// CURSOR AUTO PUSH COIN economy: central price, dynamic pricing, per-run reset, save round trip
+{
+  const s = E.newState();
+  eq(E.ECON.cursor.price, 500, 'price lives in the central economy config');
+  eq(E.cursorCost(s), 500, 'base price $500 in run 1');
+  s.cash = 499;
+  eq(E.buyCursor(s), false, 'cannot buy without enough cash');
+  eq(E.cursorInfo(s).missing, 1, 'reports the missing amount');
+  s.cash = 700;
+  eq(E.buyCursor(s), true, 'purchase works');
+  eq(s.cash, 200, 'cash is charged once');
+  eq(E.buyCursor(s), false, 'no second charge during the same run');
+  eq(E.cursorInfo(s).owned, true, 'owned');
+  E.setCursorOn(s, false);
+  const back = sanitize(JSON.parse(serialize(s)));
+  eq(back.cursor.owned === true && back.cursor.on === false, true, 'ownership + ON/OFF survive a save');
+  eq(sanitize({}).cursor.owned, false, 'old saves load as not owned');
+  s.stage = 8; s.cash = 100;
+  E.applyNewRun(s);
+  eq(s.cursor.owned, false, 'a new run resets the per-run upgrade');
+  eq(E.cursorCost(s) > 500, true, 'price follows the run price multiplier');
+}
 console.log(`\n${pass} tests passed`);

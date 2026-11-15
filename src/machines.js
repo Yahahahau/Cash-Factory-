@@ -8,6 +8,7 @@
 // air-burst impulse. Coins are never teleported, deleted or repositioned.
 import * as E from './economy.js';
 import { HEAD, JAM } from './layout.js';
+import { ECON } from './economy.js';
 import { GROUPS, colliderSize } from './physics.js';
 
 const smooth = (t) => {
@@ -233,6 +234,9 @@ export class Machines {
     const phys = this.physics;
     let stuck = 0;
     let target = null;
+    // with CURSOR AUTO PUSH COIN running, the pointer gets the first chance; the built-in rescue only steps in much later
+    const cs = this.getState && this.getState().cursor;
+    const need = cs && cs.owned && cs.on ? JAM.time + ECON.cursor.stuckSeconds + 5 : JAM.time;
     for (const idx of phys.active) {
       const s = phys.slots[idx];
       if (s.grace > 0) s.grace -= dt;
@@ -246,7 +250,7 @@ export class Machines {
       const av = s.body.angvel();
       const slow = lv.x * lv.x + lv.y * lv.y + lv.z * lv.z < JAM.speed * JAM.speed && av.x * av.x + av.y * av.y + av.z * av.z < JAM.spin * JAM.spin;
       s.lowT = slow ? s.lowT + dt : 0;
-      if (s.lowT > JAM.time) {
+      if (s.lowT > need) {
         stuck++;
         if (!target) target = { idx, zone, p };
       }

@@ -4,6 +4,7 @@ import { Machines } from '../src/machines.js';
 import { Game } from '../src/game.js';
 import { getStage, COIN_TYPES, JAM, SLAB_T } from '../src/layout.js';
 import * as E from '../src/economy.js';
+import { CursorAssistant, HumanMotion, Track } from '../src/cursor.js';
 
 let seed = 12345;
 const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
@@ -224,6 +225,149 @@ const pos = (r, idx) => r.phys.slots[idx].body.translation();
   let leftIn = 0;
   for (const idx of r.phys.active) { const p = pos(r, idx); if (p.x > -3 && p.x < -0.3 && p.y > 1.0 && p.y < 4.2) leftIn++; }
   ok('maxed machines at ~7.5 coins/s: hopper never silts up and coins keep flowing', collected > 300 && hopperPeak < 40, 'collected ' + collected + ', coins in hopper now ' + leftIn + ' (peak ' + hopperPeak + ')');
+}
+
+// 13. CURSOR AUTO PUSH COIN: detection, human motion, physical assistance, exit, cancel, failure
+function cursorRig(stageN, on = true) {
+  const r = rig(stageN);
+  r.cs = { owned: true, on };
+  r.log = [];
+  r.cur = new CursorAssistant({
+    physics: r.phys,
+    getDef: () => r.def,
+    project: (x, y) => ({ x: 200 + x * 60, y: 800 - y * 50 }),
+    getSize: () => ({ w: 400, h: 800 }),
+    getState: () => r.cs,
+    onSprite: (s) => { r.sprite = s; },
+    onStatus: (st) => r.log.push(st),
+  });
+  r.phys.helperUpdate = (dt) => r.cur.stepHelper(dt);
+  return r;
+}
+function cursorRun(r, seconds, each) {
+  const n = Math.round(seconds * 60);
+  for (let i = 0; i < n; i++) {
+    r.phys.step(1 / 60);
+    r.cur.update(1 / 60);
+    if (each) each(i);
+  }
+}
+{
+  // A. a coin resting on the lip of platform 0 (free end, nothing pushing it) is genuinely stuck -> the cursor frees it by contact
+  const r = cursorRig(1);
+  const top = r.def.tops[0];
+  const idx = r.phys.spawn(0.5, top + 0.2, 0, 1, 0, 0);
+  let maxV = 0, wasVisible = false, sawEntryOffscreen = false, maxActive = 0, hand = false, prevPos = null, maxJump = 0;
+  const startPhase = [];
+  cursorRun(r, 3.0);
+  ok('stuck detector: a coin that has just landed is NOT stuck yet', r.cur.stats.tasks === 0 && r.sprite && !r.sprite.visible);
+  cursorRun(r, 25, () => {
+    const lv = r.phys.slots[idx].body.linvel();
+    if (r.phys.slots[idx].body.translation().y > top - 0.1) maxV = Math.max(maxV, Math.hypot(lv.x, lv.y)); // while still on the platform (afterwards it just falls)
+    const s = r.sprite;
+    if (s.visible) {
+      if (!wasVisible && (s.x < 0 || s.x > 400 || s.y < 0 || s.y > 800)) sawEntryOffscreen = true;
+      wasVisible = true;
+      if (s.sprite === 'hand') hand = true;
+      if (prevPos) maxJump = Math.max(maxJump, Math.hypot(s.x - prevPos.x, s.y - prevPos.y));
+      prevPos = { x: s.x, y: s.y };
+    } else prevPos = null;
+  });
+  const p = pos(r, idx);
+  ok('cursor: stuck coin detected, approached, pushed and freed through physics', r.cur.stats.freed >= 1 && (p.y < top - 0.3 || r.phys.slots[idx].state !== 1), `freed ${r.cur.stats.freed}, coin y ${p.y.toFixed(2)} (platform top ${top})`);
+  ok('cursor: enters from outside the scene (no pop-in) and uses the hand sprite while pushing', sawEntryOffscreen && hand);
+  ok('cursor: leaves the scene and hides completely; helper collider removed', r.sprite && !r.sprite.visible && !r.phys.helper.on && !r.cur.active, r.log.join('>'));
+  ok('cursor: pointer never teleports (no jump larger than a fast human flick per frame)', maxJump < 75, 'max ' + maxJump.toFixed(1) + ' px/frame');
+  ok('physical help is gentle: coin speed stays below a launch', maxV < 7, 'max ' + maxV.toFixed(2) + ' m/s');
+  ok('status flow covers DETECTING, APPROACHING, PUSHING, ASSISTING, RETURNING and ends READY', ['DETECTING', 'APPROACHING', 'PUSHING', 'ASSISTING', 'RETURNING'].every((s) => r.log.includes(s)) && r.log[r.log.length - 1] === 'READY');
+}
+{
+  // B. coins that rest where they are supposed to rest (middle of a platform) never trigger the assistant
+  const r = cursorRig(1);
+  const top = r.def.tops[0];
+  r.phys.spawn(-2.0, top + 0.2, 0, 1, 0, 0);
+  r.phys.spawn(-1.2, top + 0.2, 1, 1, 0, 0);
+  cursorRun(r, 20);
+  ok('cursor ignores naturally resting / stacked coins', r.cur.stats.tasks === 0 && !r.sprite.visible, 'tasks ' + r.cur.stats.tasks);
+}
+{
+  // C. disabled assistant never acts; switching it off mid task makes it leave
+  const r = cursorRig(1, false);
+  r.phys.spawn(0.5, r.def.tops[0] + 0.2, 0, 1, 0, 0);
+  cursorRun(r, 12);
+  ok('cursor OFF: no activity at all', r.cur.stats.tasks === 0 && !r.sprite.visible);
+  r.cs.on = true;
+  let off = false;
+  cursorRun(r, 14, () => { if (!off && r.cur.mode === 'move' && r.cur.status === 'APPROACHING') { r.cs.on = false; off = true; } });
+  ok('cursor switched OFF while working: abandons the task and exits', off && !r.cur.active && !r.sprite.visible && r.cur.stats.cancelled >= 1);
+}
+{
+  // D. the obstruction resolves before the cursor arrives -> cancel and exit naturally, no stroke
+  const r = cursorRig(1);
+  const idx = r.phys.spawn(0.5, r.def.tops[0] + 0.2, 0, 1, 0, 0);
+  let kicked = false;
+  cursorRun(r, 20, () => {
+    if (!kicked && r.cur.mode === 'move' && r.cur.status === 'APPROACHING') { r.phys.slots[idx].body.applyImpulse({ x: 0.06, y: 0.05, z: 0 }, true); kicked = true; }
+  });
+  ok('coin freed before contact: task cancelled, no push, pointer leaves', kicked && r.cur.stats.cancelled >= 1 && r.cur.stats.strokes === 0 && !r.cur.active && !r.sprite.visible, 'strokes ' + r.cur.stats.strokes);
+}
+{
+  // E. an obstruction that cannot be freed: limited attempts, graceful exit, cooldown, never an endless loop
+  const r = cursorRig(1);
+  const idx = r.phys.spawn(0.5, r.def.tops[0] + 0.2, 0, 1, 0, 0);
+  cursorRun(r, 1);
+  r.phys.slots[idx].body.setBodyType(R.RigidBodyType.Fixed, true); // welded in place: nothing can move it
+  let guard = 0;
+  while (r.cur.stats.failed < 1 && guard++ < 60 * 40) cursorRun(r, 1 / 60);
+  cursorRun(r, 6);
+  const c = E.ECON.cursor;
+  ok('unfreeable coin: stops after maxAttempts, exits, and is left alone for a cooldown', r.cur.stats.failed === 1 && r.cur.stats.strokes <= c.maxAttempts && r.cur.stats.tasks === 1 && !r.cur.active, `tasks ${r.cur.stats.tasks} strokes ${r.cur.stats.strokes} failed ${r.cur.stats.failed}`);
+  cursorRun(r, 60);
+  ok('unfreeable coin: later retries are rate limited (no endless loop)', r.cur.stats.tasks <= 4 && r.cur.stats.strokes <= 3 * 4, `tasks ${r.cur.stats.tasks}`);
+}
+{
+  // F. several stuck coins: only one assistant at a time, the blocking coin with the most coins behind it is served first
+  const r = cursorRig(2);
+  const top = r.def.tops[0];
+  const ids = [];
+  for (const x of [0.45, 0.2, -0.05, -0.3]) ids.push(r.phys.spawn(x, top + 0.2, 0, 1, 0, 0));
+  r.phys.spawn(-1.5, top + 0.2, 0, 1, 0, 0);
+  let maxConc = 0;
+  cursorRun(r, 60, () => { maxConc = Math.max(maxConc, r.cur.active ? 1 : 0); });
+  ok('several stuck coins: handled one task at a time, at least one freed', r.cur.stats.freed >= 1 && maxConc <= 1, `freed ${r.cur.stats.freed} tasks ${r.cur.stats.tasks}`);
+}
+{
+  // G. human motion model: bell-shaped speed, curved paths, varied durations, corrections, exact arrival
+  const hm = new HumanMotion(rnd);
+  let curved = 0, corr = 0, over = 0, bell = 0;
+  const durs = [];
+  for (let i = 0; i < 60; i++) {
+    const from = { x: -40, y: 100 + rnd() * 500 }, to = { x: 150 + rnd() * 200, y: 100 + rnd() * 600 };
+    const plan = hm.plan(from, to);
+    durs.push(plan.total);
+    if (plan.segs.some((s) => s.kind === 'corr')) corr++;
+    const tr = new Track(plan);
+    let prev = { ...from }, vmax = 0, vsum = 0, n = 0, dev = 0, firstV = 0, lastV = 0;
+    const D = Math.hypot(to.x - from.x, to.y - from.y);
+    const dt = 1 / 120;
+    for (let t = 0; t < plan.total + dt; t += dt) {
+      tr.advance(dt);
+      const v = Math.hypot(tr.pos.x - prev.x, tr.pos.y - prev.y) / dt;
+      if (tr.phase === 'FAST TRAVEL' || tr.phase === 'INITIAL MOVEMENT' || tr.phase === 'TARGET APPROACH') { vmax = Math.max(vmax, v); vsum += v; n++; }
+      const cr = Math.abs((to.x - from.x) * (from.y - tr.pos.y) - (from.x - tr.pos.x) * (to.y - from.y)) / D;
+      dev = Math.max(dev, cr);
+      if (tr.pos.x > to.x + D * 0.02) over++;
+      prev = { ...tr.pos };
+    }
+    if (dev > D * 0.015) curved++;
+    if (vmax > 1.4 * (vsum / n)) bell++;
+    if (Math.hypot(tr.pos.x - to.x, tr.pos.y - to.y) > 0.6) ok('motion ends exactly on the target', false);
+  }
+  const mean = durs.reduce((a, b) => a + b, 0) / durs.length;
+  const sd = Math.sqrt(durs.reduce((a, b) => a + (b - mean) ** 2, 0) / durs.length);
+  ok('human motion: bell shaped speed (peak well above mean) on most moves', bell >= 54, bell + '/60');
+  ok('human motion: paths are curved, not straight lines', curved >= 54, curved + '/60');
+  ok('human motion: durations vary between moves; micro corrections happen', sd > 0.03 && corr >= 20, `sd ${sd.toFixed(3)} corrections ${corr}/60`);
 }
 
 console.log(`\n${pass} physics tests passed${fail ? ', ' + fail + ' FAILED' : ''}`);
