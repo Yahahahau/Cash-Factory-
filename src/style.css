@@ -9,7 +9,7 @@
   --font: 'Windows XP', Tahoma, 'Segoe UI', sans-serif;
   --fs-s: 11px; --fs: 12px; --fs-l: 14px; --fs-xl: 18px; --fs-xxl: 28px;
   /* spacing / sizing */
-  --sp1: 4px; --sp2: 8px; --sp3: 12px; --title-h: 28px; --btn-h: 26px; --btn-h-touch: 32px; --taskbar-h: 32px; --ico: 16px;
+  --sp1: 4px; --sp2: 8px; --sp3: 12px; --title-h: 28px; --btn-h: 26px; --btn-h-touch: 32px; --taskbar-h: 32px; --sab: env(safe-area-inset-bottom); --ico: 16px;
   /* Luna palette */
   --face: #ece9d8; --face-hi: #ffffff; --face-lo: #aca899; --face-dark: #716f64; --ink: #000000; --ink-dim: #6d6b5f; --ink-disabled: #aca899;
   --link: #0000ee; --sel: #316ac5; --sel-ink: #ffffff; --field: #ffffff; --field-border: #7f9db9; --pale: #d6dff7; --pale2: #eaf0fb;
@@ -46,6 +46,7 @@ button { cursor: default; border: 0; padding: 0; background: none; }
 #desktop { position: absolute; inset: 0; pointer-events: none; z-index: 20; overflow: hidden; }
 #notifs { position: absolute; right: 6px; bottom: 6px; left: 6px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; z-index: 40; }
 /* ---- presentation modes: mobile (default above) | tablet landscape + desktop = XP desktop with the game as a window ---- */
+html[data-mode="tablet"], html[data-mode="desktop"] { --sab: 0px; }
 html[data-mode="tablet"] #work, html[data-mode="desktop"] #work { background: var(--wall, #3a6ea5) center / cover no-repeat; }
 html[data-mode="tablet"] #appwin, html[data-mode="desktop"] #appwin { width: var(--ww); height: var(--wh); flex: 0 0 auto; background: var(--frame); padding: 0 3px 3px; border-radius: 8px 8px 0 0; box-shadow: 0 0 0 1px #00138c, 4px 8px 24px rgba(0, 0, 0, .55); }
 html[data-mode="tablet"] #appbar, html[data-mode="desktop"] #appbar { display: flex; margin: 0 -3px; height: var(--title-h); flex: 0 0 auto; }
@@ -54,7 +55,7 @@ html[data-mode="tablet"] #stage, html[data-mode="desktop"] #stage { --amax: .56;
 html[data-mode="tablet"] #appwin.max, html[data-mode="desktop"] #appwin.max { --amax: .85; border-radius: 0; padding: 0; }
 html[data-mode="tablet"] #appwin.max #appbar, html[data-mode="desktop"] #appwin.max #appbar { margin: 0; border-radius: 0; }
 html[data-mode="tablet"] #appwin.max #stage, html[data-mode="desktop"] #appwin.max #stage { --amax: .85; }
-#appbody { background: #0b1020; --bh: calc(100dvh - var(--taskbar-h) - env(safe-area-inset-bottom)); }
+#appbody { background: #0b1020; --bh: calc(100dvh - var(--taskbar-h) - var(--sab)); }
 #scene { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; touch-action: none; }
 #c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
 #labels, #floats { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
@@ -193,7 +194,7 @@ html[data-mode="tablet"] #appwin.max #stage, html[data-mode="desktop"] #appwin.m
 @keyframes xp-note-out { to { opacity: 0; transform: translateY(8px); } }
 
 /* ---------- taskbar + start menu ---------- */
-#taskbar { position: relative; flex: 0 0 auto; height: calc(var(--taskbar-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); display: flex; align-items: stretch; background: var(--taskbar-bg); z-index: 50; }
+#taskbar { position: relative; flex: 0 0 auto; height: calc(var(--taskbar-h) + var(--sab)); padding-bottom: var(--sab); display: flex; align-items: stretch; background: var(--taskbar-bg); z-index: 50; }
 #startBtn { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; padding: 0 14px 0 8px; color: #fff; font-style: italic; font-weight: bold; font-size: 18px; text-shadow: 1px 1px 2px #1a4a10;
   background: linear-gradient(#5fbd51 0%, #7dd56b 8%, #3c9e2e 18%, #3a9a2b 50%, #3e9f2f 85%, #2e8420 100%); border-radius: 0 12px 12px 0; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15), 2px 0 4px rgba(0, 0, 0, .4); }
 :where(html.hv) #startBtn:hover { filter: brightness(1.1); } #startBtn:active, #startBtn.open { filter: brightness(.9); }
@@ -206,7 +207,7 @@ html[data-mode="tablet"] #appwin.max #stage, html[data-mode="desktop"] #appwin.m
 #tray { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 0 10px; color: #fff; background: linear-gradient(#0c59b9 0%, #139ee9 6%, #18b5f2 10%, #139beb 14%, #1290e8 20%, #0d8dea 24%, #0d9fed 56%, #0f9eed 68%, #1098ee 76%, #0f8ee9 90%, #0b79d6 100%); box-shadow: inset 1px 0 0 #1042af, inset 2px 0 0 #18bbff; }
 #boostTray { display: flex; align-items: center; gap: 3px; padding: 1px 4px; border-radius: 3px; }
 :where(html.hv) #boostTray:hover { background: rgba(255, 255, 255, .2); }
-#startMenu { position: absolute; left: 0; bottom: calc(var(--taskbar-h) + env(safe-area-inset-bottom)); width: min(300px, 100%); z-index: 60; border: 1px solid #0831d9; border-radius: 8px 8px 0 0; overflow: hidden; background: #fff; box-shadow: 3px -2px 8px rgba(0, 0, 0, .45); transform-origin: 0 100%; animation: xp-open var(--t-open) var(--ease-out) both; }
+#startMenu { position: absolute; left: 0; bottom: calc(var(--taskbar-h) + var(--sab)); width: min(300px, 100%); z-index: 60; border: 1px solid #0831d9; border-radius: 8px 8px 0 0; overflow: hidden; background: #fff; box-shadow: 3px -2px 8px rgba(0, 0, 0, .45); transform-origin: 0 100%; animation: xp-open var(--t-open) var(--ease-out) both; }
 #startMenu .sm-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; color: #fff; font-size: var(--fs-l); font-weight: bold; text-shadow: 1px 1px 0 #0a1e7a; background: linear-gradient(#1868ce 0%, #0e60cb 12%, #0e60cb 20%, #1164cf 32%, #1667cf 33%, #1b6cd3 47%, #1e70d9 54%, #2476dc 60%, #2a7ade 65%, #2a7ade 77%, #2a7ade 79%, #2d7be0 90%, #2f7fe3 100%); }
 #startMenu .sm-av { width: 36px; height: 36px; border: 2px solid #fff; border-radius: 4px; background: linear-gradient(#fff3a0, #e69b00); display: flex; align-items: center; justify-content: center; }
 #startMenu .sm-items { display: flex; flex-direction: column; padding: 4px 0; background: #fff; }
