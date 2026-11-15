@@ -101,3 +101,10 @@ src/game.js      ลูปเกม ผลิต/เก็บ/เงิน      
 - `src/cursor.js`: stuck-coin detector (thresholds in `ECON.cursor`), target scoring, human-like motion model (min-jerk speed, curved Bezier paths, endpoint scatter, overshoot, micro corrections, pauses), state machine (READY / DETECTING / APPROACHING / PUSHING / ASSISTING / RETURNING / IDLE), physical help through a kinematic helper collider (`Physics.setHelper`, coins only).
 - `src/cursor-sprite.js`: draws the supplied artwork (`public/assets/cursor-auto-push.png`, `cursor-auto-push-link.png`) crisply at whole device pixels; hotspot constants live there. Replace the PNGs to change the artwork.
 - Tests: `npm test` (economy/save) and `npm run test:physics` (detection, motion, push, cancel, failure).
+
+## Presentation modes (src/presentation.js)
+- MOBILE (portrait / small screens): full-screen game, compact taskbar (Start menu, Cursor Auto Push Coin, boost timer).
+- TABLET LANDSCAPE (touch primary pointer, >= 900x520, landscape): XP wallpaper + centered game window, native pointer kept.
+- DESKTOP (primary pointer fine + hover): wallpaper + game window, custom cursor from `public/assets/cursor-auto-push*.png` (only after the asset is verified; otherwise the native cursor stays and Settings > Performance reports why).
+- The game window has no Close button; Maximize/Restore works. Wallpapers: `public/assets/wallpaper-3x2.jpg` and `wallpaper-wide.jpg` (chosen by viewport aspect).
+- Hover styles only apply while a real mouse/pen is active (`html.hv`), so touch never leaves stuck hover states.

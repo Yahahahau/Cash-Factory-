@@ -11,6 +11,7 @@ import { Game } from './game.js';
 import { Embed, BUILD_ID, inIframe } from './embed.js';
 import { showReward, openNewRun } from './screens.js';
 import { CursorAssistant } from './cursor.js';
+import { Presentation } from './presentation.js';
 import { CursorSprite } from './cursor-sprite.js';
 
 const QUALITY = {
@@ -36,6 +37,7 @@ async function boot() {
   E.normalizeClock(state, Date.now());
   const canvas = document.getElementById('c');
   const sceneEl = document.getElementById('scene');
+  const presentation = new Presentation();
 
   let world;
   try {
@@ -134,6 +136,7 @@ async function boot() {
       ui.toast(`Run ${state.run} started. Starting cash ${E.fmtMoney(state.cash)}, permanent income x${E.permMult(state).toFixed(2)}.`, 3600, { title: 'New Run', icon: 'flag' });
       void pv;
     },
+    getPresentation: () => presentation.report(),
     getFps: () => Math.round(1000 / Math.max(1, ema)),
   });
   ui.state = state;
@@ -245,6 +248,7 @@ async function boot() {
   }
   canvas.addEventListener('pointerdown', (e) => {
     audio.unlock();
+    if (e.pointerType === 'mouse' && e.button !== 0) return; // only the primary mouse button pokes
     if (ui.sheetKey) { ui.closeSheet(); return; }
     const r = canvas.getBoundingClientRect();
     const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
@@ -360,7 +364,7 @@ async function boot() {
   embed.start({ w: window.innerWidth, h: window.innerHeight });
 
   // handy for debugging / automated tests
-  window.__pcf = { cursor, get state() { return state; }, game, world, physics, machines, E, Save, ui, pipeline, audio };
+  window.__pcf = { presentation, cursor, get state() { return state; }, game, world, physics, machines, E, Save, ui, pipeline, audio };
 }
 
 boot().catch((e) => {
