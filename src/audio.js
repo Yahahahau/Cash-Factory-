@@ -9,7 +9,9 @@ export class GameAudio {
     this.nextNote = 0;
     this.timer = null;
     this.paused = false;
+    this.external = false; // LunaWave in use: the built-in chiptune stays silent
   }
+  setExternalMusic(on) { this.external = on; }
 
   unlock() {
     if (!this.ctx) {
@@ -124,7 +126,7 @@ export class GameAudio {
   }
 
   _schedule() {
-    if (!this.ctx || this.ctx.state !== 'running' || this.musicVol <= 0 || this.paused) {
+    if (!this.ctx || this.ctx.state !== 'running' || this.musicVol <= 0 || this.paused || this.external) {
       if (this.ctx) this.nextNote = Math.max(this.nextNote, this.ctx.currentTime + 0.05);
       return;
     }

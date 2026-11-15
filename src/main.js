@@ -11,6 +11,7 @@ import { Game } from './game.js';
 import { Embed, BUILD_ID, inIframe } from './embed.js';
 import { openNewRun, rarityOf } from './screens.js';
 import { PauseManager, GS } from './pause.js';
+import { LunaWave } from './lunawave.js';
 import { CursorAssistant } from './cursor.js';
 import { Presentation } from './presentation.js';
 import { CursorSprite } from './cursor-sprite.js';
@@ -150,6 +151,10 @@ async function boot() {
     getPresentation: () => presentation.report(),
     getFps: () => Math.round(1000 / Math.max(1, ema)),
   });
+  // LunaWave music: independent of the game loop, pause manager and mini-game sessions
+  const lunawave = new LunaWave();
+  ui.lunawave = lunawave;
+  lunawave.on(() => { if (lunawave.started) audio.setExternalMusic(true); });
   ui.state = state;
   ui.world = world;
 
@@ -214,7 +219,7 @@ async function boot() {
     document.documentElement.classList.toggle('mini-active', on);
     ui.wm.isolate(on);
     ui.menu && ui.menu.close();
-    for (const id of ['appwin', 'startBtn', 'cursorBox', 'tray']) { const el = document.getElementById(id); if (el) el.inert = on; }
+    for (const id of ['appwin', 'cursorBox', 'tray']) { const el = document.getElementById(id); if (el) el.inert = on; }
     if (on) renderDirty = true;
   });
 
@@ -417,7 +422,7 @@ async function boot() {
   embed.start({ w: window.innerWidth, h: window.innerHeight });
 
   // handy for debugging / automated tests
-  window.__pcf = { pause, presentation, cursor, get state() { return state; }, game, world, physics, machines, E, Save, ui, pipeline, audio };
+  window.__pcf = { lunawave, pause, presentation, cursor, get state() { return state; }, game, world, physics, machines, E, Save, ui, pipeline, audio };
 }
 
 boot().catch((e) => {

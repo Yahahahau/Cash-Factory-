@@ -1,6 +1,7 @@
 import * as E from './economy.js';
 import { paintBall } from './sprites.js';
 import { icon } from './icons.js';
+import { mountLunaWave } from './lunawave-ui.js';
 import { WindowManager, XPNotification, StartMenu, XPDialog, XPButton, XPToggle, esc, setProgress } from './xp.js';
 import { openMini, openBoost, tickMini } from './screens.js';
 import { openSettings, renderUpgrade } from './xp-panels.js';
@@ -64,7 +65,8 @@ export class UI {
     for (const p of [this.el.padCap, this.el.padRare]) bindBtn(p, () => { this.h.onClick(); this.openSheet(p.dataset.key); });
     bindBtn(this.el.cursorBtn, () => { this.h.onClick(); this.openCursor(); });
     bindBtn(this.el.cursorTog, () => { this.h.onToggleCursor(!this.state.cursor.on); });
-    this.menu = new StartMenu(this.el.startBtn, this.el.app, () => this._menuItems(), XPButton({ id: 'smOff', label: 'Close menu', ico: 'power' }));
+    this.menu = new StartMenu(this.el.startBtn, this.el.app, () => this._menuItems(), XPButton({ id: 'smOff', label: 'Close menu', ico: 'power' }),
+      (slot) => (this.lunawave ? mountLunaWave(slot, this.lunawave) : null));
   }
 
   // ---------- CURSOR AUTO PUSH COIN (toolbar button + info window) ----------

@@ -358,8 +358,8 @@ export function XPDialog(wm, { id, title, ico = 'info', message = '', extra = ''
 
 // ---------- start menu ----------
 export class StartMenu {
-  constructor(btn, host, items, foot) {
-    this.btn = btn; this.host = host; this.items = items; this.foot = foot; this.el = null;
+  constructor(btn, host, items, foot, panel) {
+    this.btn = btn; this.host = host; this.items = items; this.foot = foot; this.panel = panel || null; this.el = null; this._unmount = null;
     btn.addEventListener('click', (e) => { e.stopPropagation(); this.el ? this.close() : this.open(); });
     document.addEventListener('pointerdown', (e) => { if (this.el && !this.el.contains(e.target) && !btn.contains(e.target)) this.close(); }, true);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.el) this.close(); });
@@ -374,8 +374,16 @@ export class StartMenu {
       const it = items.find((x) => x !== '-' && x.key === b.dataset.k);
       this.close(); it && it.run && it.run();
     });
+    // optional dedicated section (LunaWave): a separated, recessed row between the shortcuts and the footer
+    if (this.panel) {
+      const slot = document.createElement('div'); slot.className = 'sm-music';
+      el.insertBefore(slot, el.querySelector('.sm-foot'));
+      try { this._unmount = this.panel(slot); } catch (e) { slot.remove(); this._unmount = null; }
+    }
+    // while an exclusive mini-game runs, only the music section stays usable
+    if (document.documentElement.classList.contains('mini-active')) for (const n of el.querySelectorAll('.sm-items, .sm-foot')) n.inert = true;
     this.host.appendChild(el); this.el = el; this.btn.classList.add('open');
     const f = el.querySelector('.sm-item:not(:disabled)'); f && f.focus({ preventScroll: true });
   }
-  close() { if (!this.el) return; this.el.remove(); this.el = null; this.btn.classList.remove('open'); }
+  close() { if (!this.el) return; if (this._unmount) { try { this._unmount(); } catch (e) { /* ignore */ } this._unmount = null; } this.el.remove(); this.el = null; this.btn.classList.remove('open'); }
 }

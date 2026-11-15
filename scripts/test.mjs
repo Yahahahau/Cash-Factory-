@@ -316,4 +316,20 @@ t('mini-game reward: granted once, boost starts with its full duration after the
   eq(E.finishMini(s, { score: 99, durationMs: 99999 }).ok, false, 'second settle rejected');
   eq(s.mini.wins, 1, 'no duplicate reward');
 });
+
+// ---- LunaWave library: every supplied track has an existing audio file, artwork and credits ----
+import { TRACKS } from '../src/music-library.js';
+import { existsSync } from 'fs';
+t('lunawave library: unique ids, real files, exact credits, no invented data', () => {
+  eq(TRACKS.length, 4);
+  eq(new Set(TRACKS.map((x) => x.id)).size, 4, 'unique ids');
+  for (const x of TRACKS) {
+    truthy(existsSync(new URL('../public/' + x.src.replace('./', ''), import.meta.url)), x.id + ' audio exists');
+    truthy(existsSync(new URL('../public/' + x.cover.replace('./', ''), import.meta.url)), x.id + ' cover exists');
+    truthy(x.title && x.composer && x.duration > 30, x.id + ' fields');
+  }
+  const by = Object.fromEntries(TRACKS.map((x) => [x.id, x]));
+  eq(by.jerseyclub.composer, 'Tai2Talented'); eq(by.funk.composer, 'DynaCarl'); eq(by.hallway.composer, 'JomJom412');
+  eq(by.fullversion.composer, '@tayonese'); eq(by.fullversion.artist, 'Your Ordinary ASYM Fandom');
+});
 console.log(`\n${pass} tests passed`);

@@ -26,6 +26,16 @@ const ICONS = {
   mouse: `<rect x="3.500" y="1.500" width="9" height="13" rx="4.500" fill="#f4f4f4" stroke="#4d5360"/><path d="M8 1.500v5M3.500 6.500h9" stroke="#4d5360" fill="none"/>`,
   disk: `<defs>${G('k1', '#8aaee8', '#2a56b0')}</defs><path d="M2 2h10l2 2v10H2z" fill="url(#k1)" stroke="#12327a"/><rect x="4.500" y="2" width="6" height="4" fill="#f4f4f4" stroke="#12327a" stroke-width=".7"/><rect x="4" y="9" width="8" height="5" fill="#d8dce6" stroke="#12327a" stroke-width=".7"/>`,
   speed: `<path d="M2 12a6 6 0 1112 0" fill="none" stroke="#4a6fb5" stroke-width="1.600"/><path d="M8 12l3-5" stroke="#d23c2a" stroke-width="1.600"/><circle cx="8" cy="12" r="1.200" fill="#333"/>`,
+  music: `<defs>${G('m1', '#bfe0ff', '#1c5fd1')}</defs><rect x="1" y="1" width="14" height="14" rx="3" fill="url(#m1)" stroke="#0b3a8c"/><path d="M6.200 10.800V4.400l5-1.100v6.200" fill="none" stroke="#fff" stroke-width="1.300"/><ellipse cx="5" cy="11" rx="1.700" ry="1.300" fill="#fff"/><ellipse cx="10" cy="9.700" rx="1.700" ry="1.300" fill="#fff"/>`,
+  prev: `<path d="M3 3v10" stroke="currentColor" stroke-width="2"/><path d="M13 2.800L5.200 8l7.800 5.200z" fill="currentColor"/>`,
+  next: `<path d="M13 3v10" stroke="currentColor" stroke-width="2"/><path d="M3 2.800L10.800 8 3 13.200z" fill="currentColor"/>`,
+  play: `<path d="M4 2v12l10-6z" fill="currentColor"/>`,
+  pause: `<rect x="3" y="2" width="3.600" height="12" fill="currentColor"/><rect x="9.400" y="2" width="3.600" height="12" fill="currentColor"/>`,
+  repeat1: `<path d="M2.500 7.500V6.500a2.500 2.500 0 012.500-2.500h7.500M10 1.500L12.700 4 10 6.500M13.500 8.500v1a2.500 2.500 0 01-2.500 2.500H3.500M6 14.500L3.300 12 6 9.500" fill="none" stroke="currentColor" stroke-width="1.400" stroke-linejoin="round"/><path d="M7.200 7l1.300-.9V10" fill="none" stroke="currentColor" stroke-width="1.200"/>`,
+  vol: `<path d="M1.500 6h3l4-3.500v11l-4-3.500h-3z" fill="currentColor"/><path d="M11 5.500a3.500 3.500 0 010 5M12.800 3.500a6.500 6.500 0 010 9" stroke="currentColor" fill="none" stroke-width="1.200"/>`,
+  mute: `<path d="M1.500 6h3l4-3.500v11l-4-3.500h-3z" fill="currentColor"/><path d="M11 5.500l4 5M15 5.500l-4 5" stroke="currentColor" stroke-width="1.400"/>`,
+  wave: `<path d="M1 8h2l1.500-5 2.500 10 2.500-8 1.500 3H15" fill="none" stroke="currentColor" stroke-width="1.300" stroke-linejoin="round"/>`,
+  bars: `<rect x="1.500" y="8" width="2" height="6" fill="currentColor"/><rect x="5" y="3" width="2" height="11" fill="currentColor"/><rect x="8.500" y="6" width="2" height="8" fill="currentColor"/><rect x="12" y="4.500" width="2" height="9.500" fill="currentColor"/>`,
   check: `<path d="M2 8.500l4 4L14 3.500" stroke="#2a8a2a" stroke-width="2.400" fill="none"/>`,
 };
 export function icon(name, size = 16) {
