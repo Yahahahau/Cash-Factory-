@@ -156,14 +156,23 @@ export function mountLunaWave(slot, lw) {
     const energy = real && playing ? lw.level.all : 0;
     if (energy > 0.02) { const rg = g.createRadialGradient(W * 0.5, floor, 0, W * 0.5, floor, W * 0.65); rg.addColorStop(0, `rgba(80,190,255,${Math.min(0.2, energy * 0.3)})`); rg.addColorStop(1, 'rgba(80,190,255,0)'); g.fillStyle = rg; g.fillRect(0, 0, W, H); }
   };
-  // album art beat pulse: only from real audio analysis, small, centred, no rotation
+  // Album art: scale comes straight from the engine's adaptive envelope (same analysis as the bars). Only the wrapper is
+  // transformed (never the <img>), so layout and image styles stay untouched; it relaxes back to 1.0 when paused.
+  let lastScale = 1;
   const pulse = () => {
-    if (!lw.realAnalysis || lw.status !== 'playing') { if (artScale !== 1) { artScale += (1 - artScale) * 0.3; if (Math.abs(artScale - 1) < 0.002) artScale = 1; art.style.transform = artScale === 1 ? '' : `scale(${artScale})`; } return; }
-    const tgt = 1 + Math.min(1, lw.beat) * 0.09;
-    artScale += (tgt - artScale) * (tgt > artScale ? 0.6 : 0.22);
-    art.style.transform = `scale(${artScale.toFixed(3)})`;
+    const sc = lw.artScale;
+    if (Math.abs(sc - lastScale) < 0.0004 && !(sc === 1 && lastScale !== 1)) return;
+    lastScale = sc;
+    art.style.transform = sc <= 1.0004 ? '' : `scale(${sc.toFixed(4)})`;
   };
-  const stopWatch = lw.watch(() => { draw(); pulse(); time(); });
+  // developer diagnostics: only with ?lwdebug=1 (or localStorage lunawave.debug = 1); never part of the normal UI
+  let dbg = null, dbgT = 0;
+  try { if (/[?&]lwdebug=1/.test(location.search) || localStorage.getItem('lunawave.debug') === '1') { dbg = document.createElement('pre'); dbg.className = 'lw-dbg'; root.appendChild(dbg); } } catch (e) { /* ignore */ }
+  const debug = () => {
+    if (!dbg) return; const n = performance.now(); if (n - dbgT < 120) return; dbgT = n;
+    const d = lw.diag(); dbg.textContent = `ctx ${d.ctx} | ${d.track} ${d.status}${d.paused ? ' (paused)' : ''} live:${d.live}\nbass ${d.bassDb}dB norm ${d.norm} trans ${d.trans}\nenv ${d.env} scale ${d.scale} range ${d.range}dB bins ${d.bins}\nloops ${d.loops} (starts ${d.loopStarts})`;
+  };
+  const stopWatch = lw.watch(() => { draw(); pulse(); time(); debug(); });
 
   const off = lw.on((what) => {
     if (what === 'track') track();

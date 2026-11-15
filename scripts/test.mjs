@@ -332,4 +332,53 @@ t('lunawave library: unique ids, real files, exact credits, no invented data', (
   eq(by.jerseyclub.composer, 'Tai2Talented'); eq(by.funk.composer, 'DynaCarl'); eq(by.hallway.composer, 'JomJom412');
   eq(by.fullversion.composer, '@tayonese'); eq(by.fullversion.artist, 'Your Ordinary ASYM Fandom');
 });
+
+// ---- LunaWave audio-reactive artwork: adaptive normalisation + attack/release envelope (synthetic signals) ----
+import { AudioReactive } from '../src/audio-reactive.js';
+const BIN_HZ = 44100 / 2048;
+const spectrum = (bassDb) => { const a = new Float32Array(1024).fill(-100); for (let i = 1; i < 14; i++) a[i] = bassDb; return a; };
+// kick drum: 120 BPM, 70 ms attack burst, exponential decay between hits; `peak` = loudness of the track in dB
+const kick = (t, peak, floor) => { const ph = t % 0.5; return ph < 0.07 ? peak : floor + (peak - floor) * Math.exp(-(ph - 0.07) / 0.09); };
+function simulate(peak, floor, fps, secs = 14) {
+  const r = new AudioReactive(); const dt = 1 / fps; let min = 9, max = 0; const tail = [];
+  for (let t = 0; t < secs; t += dt) { const sc = r.update(dt, spectrum(kick(t, peak, floor)), BIN_HZ); if (t > 8) { min = Math.min(min, sc); max = Math.max(max, sc); tail.push(sc); } }
+  return { min, max, r, tail };
+}
+t('reactive: analysed bins come from sampleRate / fftSize (40-220 Hz), not a hardcoded index', () => {
+  const r = new AudioReactive();
+  const a = r.bins(44100 / 2048, 1024), b = r.bins(48000 / 1024, 512);
+  eq(a.join('-'), '2-10'); eq(b.join('-'), '1-5');
+});
+t('reactive: loud and quiet tracks both give a clear, similar response (adaptive gain)', () => {
+  const loud = simulate(-12, -34, 60), quiet = simulate(-52, -74, 60);
+  truthy(loud.max > 1.06 && quiet.max > 1.06, 'strong beats reach ~1.06+ in both: ' + loud.max.toFixed(3) + ' / ' + quiet.max.toFixed(3));
+  truthy(Math.abs(loud.max - quiet.max) < 0.02, 'same reaction independent of mastering level');
+  truthy(loud.max <= 1.1001 && quiet.max <= 1.1001, 'never above the maximum scale');
+  truthy(loud.min < 1.03, 'shrinks back between beats: ' + loud.min.toFixed(3));
+});
+t('reactive: a steady tone does not jitter or balloon; silence stays at 1.0', () => {
+  const r = new AudioReactive(); let max = 0;
+  for (let t = 0; t < 12; t += 1 / 60) { const sc = r.update(1 / 60, spectrum(-30), BIN_HZ); if (t > 6) max = Math.max(max, sc); }
+  truthy(max < 1.04, 'steady level: ' + max.toFixed(3));
+  const q = new AudioReactive(); const z = new Float32Array(1024).fill(-Infinity); let sc = 1;
+  for (let i = 0; i < 300; i++) sc = q.update(1 / 60, z, BIN_HZ);
+  eq(sc, 1, 'silence');
+});
+t('reactive: frame-rate independent (30 / 60 / 144 fps give the same peak)', () => {
+  const a = simulate(-20, -42, 30).max, b = simulate(-20, -42, 60).max, c = simulate(-20, -42, 144).max;
+  truthy(Math.abs(a - c) < 0.02 && Math.abs(b - c) < 0.02, `${a.toFixed(3)} ${b.toFixed(3)} ${c.toFixed(3)}`);
+});
+t('reactive: keeps responding for the whole song (no freeze) and returns to 1.0 after pause', () => {
+  const r = new AudioReactive(); const peaks = [];
+  for (let w = 0; w < 6; w++) { let mx = 0, mn = 9; for (let t = 0; t < 10; t += 1 / 60) { const sc = r.update(1 / 60, spectrum(kick(t, -15, -38)), BIN_HZ); mx = Math.max(mx, sc); mn = Math.min(mn, sc); } peaks.push([mn, mx]); }
+  truthy(peaks.every(([mn, mx]) => mx - mn > 0.04), 'every 10 s window still moves: ' + JSON.stringify(peaks.map(([a, b]) => +(b - a).toFixed(3))));
+  let sc = r.scale; for (let i = 0; i < 120; i++) sc = r.update(1 / 60, null, 0);
+  truthy(sc < 1.002, 'relaxes to 1.0 when paused: ' + sc.toFixed(4));
+});
+t('reactive: attack is faster than release', () => {
+  const r = new AudioReactive(); for (let t = 0; t < 6; t += 1 / 60) r.update(1 / 60, spectrum(kick(t, -20, -44)), BIN_HZ);
+  const e0 = r.env; r.env = 0; r.update(1 / 60, spectrum(-20), BIN_HZ); const up = r.env;
+  r.env = 1; r.update(1 / 60, spectrum(-60), BIN_HZ); const down = 1 - r.env;
+  truthy(up > down, `up ${up.toFixed(3)} down ${down.toFixed(3)}`); void e0;
+});
 console.log(`\n${pass} tests passed`);

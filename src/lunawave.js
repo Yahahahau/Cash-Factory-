@@ -2,6 +2,7 @@
 // It is independent from the game: no physics / pause-manager hooks, so the Start Menu, the Flying Ball session and
 // game pauses never restart or reset the song. Only an explicit Pause stops it.
 import { TRACKS } from './music-library.js';
+import { AudioReactive } from './audio-reactive.js';
 
 const KEY = 'pixelCashFactory.lunawave.v1';
 const LOAD_TIMEOUT = 15000;
@@ -26,11 +27,13 @@ export class LunaWave {
     this.raf = 0;
     this.errStreak = 0;
     this._loadTimer = 0;
-    this._freq = null; this._time = null;
-    // analysis results (0..1)
-    this.level = { bass: 0, mid: 0, high: 0, all: 0 };
-    this.beat = 0; // decaying beat pulse
-    this._avgBass = 0; this._prevBass = 0;
+    this._freq = null; this._db = null;
+    this.level = { bass: 0, mid: 0, high: 0, all: 0 }; // spectrum summary for the bars
+    this.react = new AudioReactive(); // adaptive bass / transient envelope -> artwork scale
+    this.artScale = 1;
+    this.live = true; // false while the analyser data is frozen (suspended / interrupted context)
+    this._same = 0; this._sig = 0; this._lastResume = 0; this._t = 0;
+    this.loopsRunning = 0; this.loopStarts = 0;
     this._restore();
   }
 
@@ -44,7 +47,7 @@ export class LunaWave {
   get playing() { return this.status === 'playing'; }
 
   on(fn) { this.listeners.push(fn); return () => { this.listeners = this.listeners.filter((f) => f !== fn); }; }
-  _emit(what) { for (const f of this.listeners.slice()) { try { f(what, this); } catch (e) { /* a broken view must never stop the music */ } } }
+  _emit(what) { if (what === 'status' || what === 'track') this._startLoop(); for (const f of this.listeners.slice()) { try { f(what, this); } catch (e) { /* a broken view must never stop the music */ } } }
 
   _restore() {
     try {
@@ -89,12 +92,14 @@ export class LunaWave {
       this.ctx = new AC();
       const src = this.ctx.createMediaElementSource(this._el());
       this.analyser = this.ctx.createAnalyser();
-      this.analyser.fftSize = 1024;
-      this.analyser.smoothingTimeConstant = 0.78;
+      this.analyser.fftSize = 2048; // ~21 Hz bins at 44.1 kHz: enough resolution for the 40-220 Hz band
+      this.analyser.smoothingTimeConstant = 0.6;
+      this.analyser.minDecibels = -100; this.analyser.maxDecibels = -25;
       this.gain = this.ctx.createGain();
       src.connect(this.analyser); this.analyser.connect(this.gain); this.gain.connect(this.ctx.destination);
       this._freq = new Uint8Array(this.analyser.frequencyBinCount);
-      this._time = new Uint8Array(this.analyser.fftSize);
+      this._db = new Float32Array(this.analyser.frequencyBinCount);
+      this.ctx.addEventListener && this.ctx.addEventListener('statechange', () => this._ctxState());
       this.graph = 'web';
       this._applyVolume();
     } catch (e) {
@@ -115,6 +120,7 @@ export class LunaWave {
     clearTimeout(this._loadTimer);
     this.status = 'loading'; this.error = '';
     this.loadedId = t.id;
+    this.react.newTrack();
     a.src = t.src; // same element: the previous track is replaced, never played twice
     a.load();
     this._loadTimer = setTimeout(() => { if (this.status === 'loading') this._fail('Loading took too long.'); }, LOAD_TIMEOUT);
@@ -165,39 +171,67 @@ export class LunaWave {
     if (this.errStreak < this.tracks.length) setTimeout(() => { if (this.status === 'error') this.select(this.index + 1, true); }, 1200);
   }
 
-  // ---- analysis: one central loop, runs only while playing and at least one view is watching ----
+  // ---- analysis: ONE central loop (shared by the bars and the artwork); runs while playing and a view is watching ----
   watch(fn) { this.watchers.push(fn); this._startLoop(); return () => { this.watchers = this.watchers.filter((f) => f !== fn); }; }
+  _ctxState() {
+    // suspended / interrupted (iOS) / closed: treat analyser data as not live and try to bring the context back
+    if (this.ctx && this.ctx.state !== 'running') this.live = false;
+    if (this.ctx && this.ctx.state === 'running') this._same = 0;
+    this._emit('ctx');
+  }
+  _wake() {
+    const now = performance.now();
+    if (!this.ctx || this.ctx.state === 'running' || now - this._lastResume < 1000) return;
+    this._lastResume = now;
+    if (this.ctx.state === 'closed') { console.warn('[LunaWave] AudioContext closed: visualizer unavailable'); this.graph = 'failed'; return; }
+    this.ctx.resume().catch((e) => console.warn('[LunaWave] resume rejected', e && e.name));
+  }
+  _wantLoop() { return this.watchers.length > 0 && (this.status === 'playing' || this.status === 'loading' || this.react.env > 0.001 || this.artScale > 1.0005); }
   _startLoop() {
-    if (this.raf || !this.watchers.length || this.status !== 'playing') return;
-    const tick = () => {
-      this.raf = 0;
-      if (!this.watchers.length || this.status !== 'playing') { this._decay(); for (const w of this.watchers.slice()) w(this); return; }
-      this._sample();
+    if (this.raf || !this._wantLoop()) return;
+    this.loopStarts++; this.loopsRunning++; this._t = performance.now();
+    const tick = (now) => {
+      const dt = Math.min(0.1, Math.max(0.001, (now - this._t) / 1000)); this._t = now;
+      this._sample(dt);
       for (const w of this.watchers.slice()) w(this);
-      this.raf = requestAnimationFrame(tick);
+      if (this._wantLoop()) this.raf = requestAnimationFrame(tick);
+      else { this.raf = 0; this.loopsRunning--; }
     };
     this.raf = requestAnimationFrame(tick);
   }
-  _decay() { this.beat *= 0.8; for (const k in this.level) this.level[k] *= 0.82; }
-  _sample() {
-    if (!this.analyser) { this._decay(); return; }
-    this.analyser.getByteFrequencyData(this._freq);
-    this.analyser.getByteTimeDomainData(this._time);
-    const f = this._freq, n = f.length;
-    const avg = (a, b) => { let s = 0; for (let i = a; i < b; i++) s += f[i]; return s / (b - a) / 255; };
-    // bin width = sampleRate / fftSize (~43 Hz): bass < ~260 Hz, mid < ~2.6 kHz, high above
-    const bass = avg(1, 7), mid = avg(7, 60), high = avg(60, Math.min(n, 260));
+  _sample(dt) {
+    const playing = this.status === 'playing' && this.audio && !this.audio.paused;
     const L = this.level;
+    if (!this.analyser || !playing) { // paused / ended / no analysis: the envelope relaxes smoothly back to scale 1
+      this.react.update(dt, null, 0); this.artScale = this.react.scale;
+      for (const key in L) L[key] *= 1 - Math.min(1, dt * 6);
+      return;
+    }
+    if (this.ctx.state !== 'running') { this.live = false; this._wake(); this.react.update(dt, null, 0); this.artScale = this.react.scale; return; }
+    this.analyser.getByteFrequencyData(this._freq);
+    this.analyser.getFloatFrequencyData(this._db);
+    // frozen data check: a suspended analyser keeps returning the same numbers (digital silence is -Infinity everywhere and not "stale")
+    const f = this._freq, n = f.length;
+    const d = this._db;
+    let sig = 0, loud = false;
+    for (let i = 1; i < 64; i++) { if (d[i] > -120) { sig += d[i] * (1 + (i & 7)); loud = true; } }
+    if (sig === this._sig && loud) this._same += dt; else { this._same = 0; this.live = true; }
+    this._sig = sig;
+    if (this._same > 0.5) { this.live = false; this._wake(); }
+    if (!this.live) { this.react.update(dt, null, 0); this.artScale = this.react.scale; return; }
+    const avg = (a, b) => { let s = 0; for (let i = a; i < b; i++) s += f[i]; return s / (b - a) / 255; };
+    const bw = this.ctx.sampleRate / this.analyser.fftSize; // Hz per bin
+    const at = (hz) => Math.min(n - 1, Math.max(1, Math.round(hz / bw)));
+    const bass = avg(at(40), at(260) + 1), mid = avg(at(260), at(2600)), high = avg(at(2600), at(11000));
     const sm = (o, v) => (v > o ? o + (v - o) * 0.6 : o + (v - o) * 0.18);
     L.bass = sm(L.bass, bass); L.mid = sm(L.mid, mid); L.high = sm(L.high, high); L.all = (L.bass + L.mid + L.high) / 3;
-    // beat = bass transient above its running average (a stronger transient gives a stronger pulse, quiet music a gentle one)
-    const rise = Math.max(0, bass - this._prevBass);
-    this._avgBass += (bass - this._avgBass) * 0.04;
-    const over = bass - this._avgBass * 1.12;
-    if (over > 0.02 && rise > 0.012) this.beat = Math.max(this.beat, clamp(over * 3.2 + rise * 3, 0.15, 1));
-    else this.beat *= 0.86;
-    this._prevBass = bass;
+    this.artScale = this.react.update(dt, this._db, bw);
   }
   frequency() { return this.analyser ? this._freq : null; }
-  waveform() { return this.analyser ? this._time : null; }
+  diag() {
+    const r = this.react;
+    return { ctx: this.ctx ? this.ctx.state : 'none', track: this.track.id, status: this.status, paused: this.audio ? this.audio.paused : true, live: this.live,
+      bassDb: +r.bassDb.toFixed(1), norm: +r.norm.toFixed(3), trans: +r.trans.toFixed(3), env: +r.env.toFixed(3), scale: +this.artScale.toFixed(4),
+      bins: r.lastBins.join('-'), loops: this.loopsRunning, loopStarts: this.loopStarts, range: +(r.hi - r.lo).toFixed(1) };
+  }
 }
