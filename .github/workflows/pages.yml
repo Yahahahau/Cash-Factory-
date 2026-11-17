@@ -27,6 +27,14 @@ jobs:
       - run: npm test
       # GITHUB_SHA becomes the build id written to version.json -> running iframes auto-update
       - run: npm run build
+        # public client config only (repository Settings > Secrets and variables > Actions > Variables). Never put a service_role key here.
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_GAME_ID: ${{ vars.VITE_GAME_ID }}
+          VITE_AUTH_PROVIDERS: ${{ vars.VITE_AUTH_PROVIDERS }}
+          VITE_ENABLE_LINKING: ${{ vars.VITE_ENABLE_LINKING }}
+          VITE_TRUSTED_HOST_ORIGINS: ${{ vars.VITE_TRUSTED_HOST_ORIGINS }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

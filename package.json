@@ -8,11 +8,15 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview --host",
-    "test": "node scripts/test.mjs",
+    "test": "node scripts/test.mjs && node scripts/account-test.mjs",
+    "test:account": "node scripts/account-test.mjs",
     "test:physics": "node scripts/physics-test.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.14.0",
+    "@supabase/supabase-js": "^2.119.0",
+    "lucide": "^1.73.0",
+    "simple-icons": "^16.38.0",
     "three": "^0.170.0"
   },
   "devDependencies": {

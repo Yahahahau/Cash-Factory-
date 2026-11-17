@@ -131,6 +131,7 @@ export class UI {
       { key: 'run', icon: 'flag', label: 'New Run', sub: E.canNewRun(s) ? 'Available' : 'Unlocks at stage ' + E.ECON.run.minStage, disabled: !E.canNewRun(s), run: () => this.h.onNewRunOpen() },
       '-',
       { key: 'cur', icon: 'mouse', label: 'Cursor Auto Push Coin', sub: this.state.cursor.owned ? (this.state.cursor.on ? 'ON' : 'OFF') : '$' + E.fmtCash(E.cursorCost(this.state)), run: () => this.openCursor() },
+      { key: 'acct', icon: 'user', label: 'Account', sub: this.account ? this.account.label : 'Guest', run: () => this.account && this.account.openWindow() },
       { key: 'set', icon: 'gear', label: 'Settings', run: () => openSettings(this, 0) },
       { key: 'stat', icon: 'chart', label: 'Statistics', run: () => openSettings(this, 6) },
       { key: 'upd', icon: 'disk', label: 'Check for updates', run: () => { this.h.onCheckUpdate(); this.toast('Checking for a new version...', 2000, { title: 'Update' }); } },

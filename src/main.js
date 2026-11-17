@@ -15,6 +15,7 @@ import { LunaWave } from './lunawave.js';
 import { CursorAssistant } from './cursor.js';
 import { Presentation } from './presentation.js';
 import { CursorSprite } from './cursor-sprite.js';
+import { createAccount } from './account/index.js';
 
 const QUALITY = {
   low: { limit: 50, rows: 330, dpr: 1.5, shadows: false, shadowMap: 512 },
@@ -61,7 +62,8 @@ async function boot() {
   let embed;
   let saveTimer = 0;
   let suspendedAt = null;
-  const doSave = () => Save.save(state);
+  let account = null; // cloud account (assigned after the UI exists)
+  const doSave = () => { Save.save(state); if (account) account.notifySaved(state); };
 
   const ui = new UI({
     version: BUILD_ID,
@@ -210,6 +212,7 @@ async function boot() {
     pause.exitMini(state);
     ui.updateMini(state);
     doSave();
+    if (account) account.kick();
     if (announce && lastReward) {
       const ra = rarityOf(lastReward.mult);
       ui.toast(`Profit Boost x${lastReward.mult} (${ra[1]}) is active for ${E.ECON.mini.boostMinutes} minutes.`, 3600, { title: 'Reward', icon: 'trophy' });
@@ -420,11 +423,36 @@ async function boot() {
   ui.slowUpdate(state);
   document.fonts && document.fonts.ready.then(() => {});
   requestAnimationFrame(frame);
+  // ----- player account + cloud save (inert unless VITE_SUPABASE_* is configured) -----
+  account = createAccount({
+    ui,
+    getState: () => state,
+    canApply: () => pause.running,
+    build: BUILD_ID,
+    // replaces the game state with a cloud save the player chose / that is strictly newer. Settings stay per device.
+    applyState: (next) => {
+      const keep = state.settings;
+      state = next;
+      state.settings = { ...keep };
+      state.lastSaved = Date.now(); // no offline income for the gap between devices
+      state.mini.session = null;
+      E.normalizeClock(state, Date.now());
+      game.reset(state);
+      ui.state = state;
+      ui.wm.closeWhere((w) => ['cursor', 'mini', 'boost', 'newrun'].includes(w.id), true);
+      ui.slowUpdate(state);
+      ui.updateCursor();
+      ui.updateMini(state);
+      Save.save(state);
+    },
+  });
+  ui.account = account;
+  account.start();
   ui.hideLoading();
   embed.start({ w: window.innerWidth, h: window.innerHeight });
 
   // handy for debugging / automated tests
-  window.__pcf = { lunawave, pause, presentation, cursor, get state() { return state; }, game, world, physics, machines, E, Save, ui, pipeline, audio };
+  window.__pcf = { account, lunawave, pause, presentation, cursor, get state() { return state; }, game, world, physics, machines, E, Save, ui, pipeline, audio };
 }
 
 boot().catch((e) => {

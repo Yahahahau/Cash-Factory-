@@ -33,6 +33,7 @@ export default defineConfig({
     target: 'es2020',
     chunkSizeWarningLimit: 2500,
     assetsInlineLimit: 8192,
+    rollupOptions: { input: { main: 'index.html', authCallback: 'auth-callback.html' } },
   },
   server: { host: true },
 });

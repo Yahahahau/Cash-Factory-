@@ -36,6 +36,8 @@ const ICONS = {
   mute: `<path d="M1.500 6h3l4-3.500v11l-4-3.500h-3z" fill="currentColor"/><path d="M11 5.500l4 5M15 5.500l-4 5" stroke="currentColor" stroke-width="1.400"/>`,
   wave: `<path d="M1 8h2l1.500-5 2.500 10 2.500-8 1.500 3H15" fill="none" stroke="currentColor" stroke-width="1.300" stroke-linejoin="round"/>`,
   bars: `<rect x="1.500" y="8" width="2" height="6" fill="currentColor"/><rect x="5" y="3" width="2" height="11" fill="currentColor"/><rect x="8.500" y="6" width="2" height="8" fill="currentColor"/><rect x="12" y="4.500" width="2" height="9.500" fill="currentColor"/>`,
+  user: `<defs>${G('u1', '#d6ecff', '#3b82d8')}</defs><circle cx="8" cy="5" r="3" fill="url(#u1)" stroke="#12327a"/><path d="M2 14.500c0-3.300 2.700-5.500 6-5.500s6 2.200 6 5.500z" fill="url(#u1)" stroke="#12327a"/>`,
+  cloud: `<defs>${G('l1', '#f4faff', '#8fbcf0')}</defs><path d="M4.500 12.500a3 3 0 01-.4-6 4 4 0 017.600 1 2.600 2.600 0 01-.2 5z" fill="url(#l1)" stroke="#1d4f98" stroke-linejoin="round"/>`,
   check: `<path d="M2 8.500l4 4L14 3.500" stroke="#2a8a2a" stroke-width="2.400" fill="none"/>`,
 };
 export function icon(name, size = 16) {
