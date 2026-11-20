@@ -1,107 +1,20 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { IN_HALF, WALL_W, SLAB_Z, Z_HALF, VIEW_HALF_W, VIEW_TOP, COIN_TYPES, HEAD } from './layout.js';
+import { VIEW_HALF_W, VIEW_TOP, COIN_TYPES } from './layout.js';
+import { buildHouse, coinGeometry } from './scene/geometry.js';
+import { MaterialLibrary } from './scene/materials.js';
+import { themeFor } from './scene/themes.js';
+import { Backdrop } from './scene/backdrop.js';
+import { buildPipe, buildPiston, buildBelt, buildFan, windStreak, buildMagnet, buildLauncher, buildGate, buildGrinder } from './scene/props.js';
+import { Timeline, Ease, PART_ENTER, PART_EXIT, OBJ, CELEBRATE, TRANSITION as T } from './scene/stage-anim.js';
 
 const FONT_PIXEL = '"Press Start 2P", monospace';
-
-// ---------- small canvas helpers ----------
-function canvasTex(w, h, draw, opts = {}) {
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.magFilter = opts.nearest ? THREE.NearestFilter : THREE.LinearFilter;
-  t.minFilter = THREE.LinearFilter;
-  t.generateMipmaps = false;
-  if (opts.repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 4;
-  return t;
-}
-
-// platform front: soft vertical light gradient + slim darker outline on the lower / side edges
-function slabFrontTex() {
-  return canvasTex(64, 64, (g, w, h) => {
-    const gr = g.createLinearGradient(0, 0, 0, h);
-    gr.addColorStop(0, '#ffffff');
-    gr.addColorStop(0.5, '#eef3fc');
-    gr.addColorStop(1, '#bfcbe4');
-    g.fillStyle = gr;
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillRect(0, 0, w, 2);
-    g.fillStyle = 'rgba(70,86,128,0.55)'; g.fillRect(0, h - 3, w, 3);
-    g.fillStyle = 'rgba(70,86,128,0.28)'; g.fillRect(0, 0, 2, h); g.fillRect(w - 2, 0, 2, h);
-    g.fillStyle = 'rgba(70,86,128,0.05)';
-    for (let i = 0; i < 40; i++) g.fillRect(((i * 37) % w) | 0, ((i * 19) % (h - 6)) | 0, 2, 2);
-  });
-}
-function slabTopTex() {
-  return canvasTex(32, 32, (g, w, h) => {
-    const gr = g.createLinearGradient(0, 0, 0, h);
-    gr.addColorStop(0, '#ffffff');
-    gr.addColorStop(1, '#e3eaf7');
-    g.fillStyle = gr;
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = 'rgba(70,86,128,0.35)'; g.fillRect(0, h - 2, w, 2);
-  });
-}
-function slabSideTex() {
-  return canvasTex(16, 16, (g, w, h) => {
-    g.fillStyle = '#dbe3f3';
-    g.fillRect(0, 0, w, h);
-  });
-}
-function wallTex() {
-  return canvasTex(64, 16, (g, w, h) => {
-    const gr = g.createLinearGradient(0, 0, w, 0);
-    gr.addColorStop(0, '#c4cfe6');
-    gr.addColorStop(0.35, '#ffffff');
-    gr.addColorStop(1, '#eaf0fb');
-    g.fillStyle = gr;
-    g.fillRect(0, 0, w, h);
-  });
-}
-function beltTopTex() {
-  return canvasTex(32, 16, (g, w, h) => {
-    g.fillStyle = '#2a3146';
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = '#58617f';
-    for (let x = 0; x < w; x += 8) { g.fillRect(x, 0, 4, h); }
-    g.fillStyle = '#7a86ab';
-    for (let x = 0; x < w; x += 8) { g.fillRect(x, 0, 4, 2); }
-  }, { repeat: true, nearest: true });
-}
-function hazardTex() {
-  return canvasTex(32, 32, (g, w, h) => {
-    g.fillStyle = '#ffd21f';
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = '#1b1d24';
-    for (let i = -h; i < w + h; i += 16) {
-      g.beginPath(); g.moveTo(i, h); g.lineTo(i + 8, h); g.lineTo(i + 8 + h, 0); g.lineTo(i + h, 0); g.closePath(); g.fill();
-    }
-  }, { repeat: true, nearest: true });
-}
-function chevronTex() {
-  return canvasTex(32, 32, (g, w, h) => {
-    g.fillStyle = '#ff9e1a'; g.fillRect(0, 0, w, h);
-    g.strokeStyle = '#fff2b0'; g.lineWidth = 5; g.lineJoin = 'miter';
-    for (let y = -4; y < h; y += 14) { g.beginPath(); g.moveTo(4, y + 12); g.lineTo(w / 2, y); g.lineTo(w - 4, y + 12); g.stroke(); }
-  }, { nearest: true });
-}
-function labelTex(text, bg, fg) {
-  return canvasTex(128, 64, (g, w, h) => {
-    g.clearRect(0, 0, w, h);
-    g.fillStyle = bg; g.fillRect(0, 0, w, h);
-    g.fillStyle = fg; g.font = `bold 40px ${FONT_PIXEL}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(text, w / 2, h / 2 + 3);
-  }, { nearest: true });
-}
 
 class Particles {
   constructor(scene, max) {
     this.max = max;
-    this.mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), max);
+    const geo = new THREE.IcosahedronGeometry(0.6, 0);
+    this.mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff }), max);
     this.mesh.frustumCulled = false;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.setColorAt(0, new THREE.Color(1, 1, 1));
@@ -111,6 +24,7 @@ class Particles {
     this.tmp = new THREE.Color();
     this.m = new THREE.Matrix4();
     this.q = new THREE.Quaternion();
+    this.e = new THREE.Euler();
     this.s = new THREE.Vector3();
     this.pos = new THREE.Vector3();
   }
@@ -124,7 +38,7 @@ class Particles {
       this.p.push({
         x, y, z: z + (Math.random() - 0.5) * 0.3,
         vx: Math.cos(a) * sp * spread, vy: Math.sin(a) * sp * 0.6 + speed * up, vz: (Math.random() - 0.3) * sp * 0.4,
-        life, max: life, g: gravity, size, rot: Math.random() * 6, col: cols[(Math.random() * cols.length) | 0],
+        life: life * (0.8 + Math.random() * 0.4), max: life, g: gravity, size, rot: Math.random() * 6, spin: 2 + Math.random() * 5, col: cols[(Math.random() * cols.length) | 0],
       });
     }
   }
@@ -136,14 +50,16 @@ class Particles {
       p.life -= dt;
       if (p.life <= 0) { this.p[i] = this.p[this.p.length - 1]; this.p.pop(); }
     }
+    const drag = Math.exp(-dt * 0.8);
     for (const p of this.p) {
       p.vy -= p.g * dt;
+      p.vx *= drag; p.vz *= drag;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-      p.rot += dt * 4;
+      p.rot += dt * p.spin;
       const k = Math.min(1, (p.life / p.max) * 1.6);
       const sz = p.size * k;
       this.pos.set(p.x, p.y, p.z);
-      this.q.setFromAxisAngle(this.s.set(0, 0, 1), p.rot);
+      this.q.setFromEuler(this.e.set(p.rot, p.rot * 0.7, 0));
       this.s.set(sz, sz, sz);
       this.m.compose(this.pos, this.q, this.s);
       this.mesh.setMatrixAt(n, this.m);
@@ -156,27 +72,6 @@ class Particles {
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
 }
-
-const BG_VERT = /* glsl */ `
-varying vec3 vW;
-void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }
-`;
-// horizontal "cylinder" shading: bright in the middle, dark at the walls; a touch lighter towards the top
-const BG_FRAG = /* glsl */ `
-precision highp float;
-uniform vec3 cEdge; uniform vec3 cMid; uniform float lowRes;
-varying vec3 vW;
-float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-void main(){
-  float t = clamp(abs(vW.x) / 3.0, 0.0, 1.0);
-  float k = smoothstep(0.05, 1.0, pow(t, 0.85));
-  vec3 c = mix(cMid, cEdge, k);
-  c *= 0.9 + 0.12 * clamp(vW.y / 15.0, 0.0, 1.0);
-  c += (h(floor(vW.xy * 14.0)) - 0.5) * 0.012;
-  gl_FragColor = vec4(c, 1.0);
-  #include <colorspace_fragment>
-}
-`;
 
 export class World {
   constructor(canvas, opts) {
@@ -192,26 +87,31 @@ export class World {
     this.shake = 0;
     this.pulse = 0;
     this.pipeKick = 0;
-    this.stageGroup = null;
-    this._geos = [];
-    this.vis = { pistons: [], belts: [], fans: [], magnets: [], launchers: [], gates: [], rollers: [], streaks: [] };
+    this.flash = 0;
+    this.lightPulse = 0;
+    this.stage = null;
+    this.theme = null;
+    this.tl = null;
+    this.onTransition = null; // (busy:boolean) => void, set by main to hide the price labels while platforms move
+    this.quality = { shadows: true };
 
     const pm = new THREE.PMREMGenerator(this.renderer);
     this.envMap = pm.fromScene(new RoomEnvironment(), 0.04).texture;
     pm.dispose();
 
+    this.lib = new MaterialLibrary(this.envMap);
+    this.M = Object.assign(this.lib.m, { tex: this.lib.tex });
     this._lights();
-    this._textures();
-    this._background();
+    this.backdrop = new Backdrop(this.scene, this.M);
     this._coins();
+    this.pipe = buildPipe(this.M);
+    this.scene.add(this.pipe);
     this.particles = new Particles(this.scene, opts.particles || 200);
-    this.palCur = { edge: new THREE.Color(0x06080c), mid: new THREE.Color(0xcdd1d8), tint: new THREE.Color(0xffffff) };
-    this.palTgt = { edge: new THREE.Color(0x06080c), mid: new THREE.Color(0xcdd1d8), tint: new THREE.Color(0xffffff) };
   }
 
   _lights() {
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xaab2cc, 1.25));
-    const d = new THREE.DirectionalLight(0xffffff, 1.7);
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0xaab2cc, 1.1);
+    const d = new THREE.DirectionalLight(0xffffff, 1.9);
     d.position.set(-3.5, 15, 18);
     d.target.position.set(0, 7, 0);
     d.castShadow = true;
@@ -219,14 +119,20 @@ export class World {
     const sc = d.shadow.camera;
     sc.left = -7; sc.right = 7; sc.top = 11; sc.bottom = -10; sc.near = 1; sc.far = 50;
     d.shadow.bias = -0.0005;
-    d.shadow.normalBias = 0.025;
-    d.shadow.radius = 2;
-    this.scene.add(d, d.target);
+    d.shadow.normalBias = 0.03;
+    // fill / rim light from the upper right: lifts the shadowed sides and draws the bevels
+    const f = new THREE.DirectionalLight(0x9fc3ff, 0.5);
+    f.position.set(9, 10, 6);
+    f.target.position.set(0, 7, 0);
+    this.scene.add(this.hemi, d, d.target, f, f.target);
     this.sun = d;
+    this.fill = f;
+    this.light = { cur: null, from: null, to: null };
   }
 
   setQuality(q) {
     const on = !!q.shadows;
+    this.quality = q;
     this.sun.castShadow = on;
     const size = q.shadowMap || 1024;
     if (this.sun.shadow.mapSize.x !== size) {
@@ -234,49 +140,12 @@ export class World {
       if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
     }
     for (const m of this.objMeshes) m.castShadow = on;
+    this.backdrop.setQuality(q);
+    this.lib.setDetail(on);
+    this.fill.visible = on;
   }
 
-  _textures() {
-    const T = (t) => t;
-    this.tex = {
-      front: T(slabFrontTex()), top: T(slabTopTex()), side: T(slabSideTex()), wall: T(wallTex()),
-      belt: T(beltTopTex()), hazard: T(hazardTex()), chevron: T(chevronTex()),
-    };
-    const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.82, metalness: 0.0, ...o });
-    this.mats = {
-      front: std({ map: this.tex.front }), top: std({ map: this.tex.top }), side: std({ map: this.tex.side }),
-      wall: std({ map: this.tex.wall }),
-      beltTop: std({ map: this.tex.belt, roughness: 0.9 }), beltBody: std({ color: 0x2a3146, roughness: 0.7 }),
-      dark: std({ color: 0x1c2030, roughness: 0.6 }),
-      metal: std({ color: 0xaab3c6, roughness: 0.35, metalness: 0.7, envMap: this.envMap }),
-      metalDark: std({ color: 0x6b7388, roughness: 0.4, metalness: 0.7, envMap: this.envMap }),
-      hazard: std({ map: this.tex.hazard, roughness: 0.6 }),
-      green: std({ color: 0x36d65a, roughness: 0.45, metalness: 0.1, emissive: 0x0b3a14, emissiveIntensity: 0.6 }),
-      greenDark: std({ color: 0x1f9a3c, roughness: 0.5 }),
-      red: std({ color: 0xe23b3b, roughness: 0.45, emissive: 0x4a0808, emissiveIntensity: 0.5 }),
-      orange: std({ map: this.tex.chevron, roughness: 0.6 }),
-      glass: new THREE.MeshBasicMaterial({ color: 0x7dffb0, transparent: true, opacity: 0.28, depthWrite: false }),
-      wind: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }),
-    };
-    this.tintMats = [this.mats.front, this.mats.top, this.mats.side, this.mats.wall];
-  }
-
-  _background() {
-    this.bgU = { cEdge: { value: new THREE.Color(0x06080c) }, cMid: { value: new THREE.Color(0xcdd1d8) }, lowRes: { value: 0 } };
-    const bg = new THREE.Mesh(
-      new THREE.PlaneGeometry(60, 60),
-      new THREE.ShaderMaterial({ vertexShader: BG_VERT, fragmentShader: BG_FRAG, uniforms: this.bgU, depthWrite: true })
-    );
-    bg.position.set(0, 8, -SLAB_Z - 0.3);
-    this.scene.add(bg);
-    // transparent shadow catcher in front of the gradient
-    const sh = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShadowMaterial({ opacity: 0.2 }));
-    sh.position.set(0, 8, -SLAB_Z - 0.29);
-    sh.receiveShadow = true;
-    this.scene.add(sh);
-  }
-
-  // ---- coins: thin cylinders (axis = local Y, same as the Rapier collider) ----
+  // ---- coins: lathe profile (rim + recessed face), axis = local Y like the Rapier collider ----
   _coinFaceTextures(c) {
     const N = 128;
     const mk = (bump) => {
@@ -285,14 +154,22 @@ export class World {
       const g = cv.getContext('2d');
       const hex = (n) => '#' + n.toString(16).padStart(6, '0');
       const mid = N / 2;
-      g.fillStyle = bump ? '#808080' : hex(c.faceColor);
-      g.fillRect(0, 0, N, N);
+      if (bump) { g.fillStyle = '#808080'; g.fillRect(0, 0, N, N); }
+      else {
+        const gr = g.createRadialGradient(mid * 0.7, mid * 0.6, N * 0.05, mid, mid, N * 0.55);
+        gr.addColorStop(0, hex(c.faceColor)); gr.addColorStop(1, hex(c.edge));
+        g.fillStyle = hex(c.faceColor); g.fillRect(0, 0, N, N);
+        g.globalAlpha = 0.35; g.fillStyle = gr; g.fillRect(0, 0, N, N); g.globalAlpha = 1;
+      }
       g.lineWidth = N * 0.08;
       g.strokeStyle = bump ? '#ffffff' : hex(c.edge);
       g.beginPath(); g.arc(mid, mid, N * 0.42, 0, Math.PI * 2); g.stroke();
+      // milled dots around the rim
+      g.fillStyle = bump ? '#d0d0d0' : '#ffffff40';
+      for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; g.beginPath(); g.arc(mid + Math.cos(a) * N * 0.36, mid + Math.sin(a) * N * 0.36, N * 0.012, 0, Math.PI * 2); g.fill(); }
       g.lineWidth = N * 0.02;
       g.strokeStyle = bump ? '#303030' : '#00000040';
-      g.beginPath(); g.arc(mid, mid, N * 0.33, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.arc(mid, mid, N * 0.31, 0, Math.PI * 2); g.stroke();
       g.fillStyle = bump ? '#ffffff' : hex(c.edge);
       if (c.face === 'star') {
         g.beginPath();
@@ -300,6 +177,7 @@ export class World {
         g.closePath(); g.fill();
       } else if (c.face === 'gem') {
         g.beginPath(); g.moveTo(mid, mid - N * 0.22); g.lineTo(mid + N * 0.19, mid); g.lineTo(mid, mid + N * 0.22); g.lineTo(mid - N * 0.19, mid); g.closePath(); g.fill();
+        if (!bump) { g.fillStyle = '#ffffff90'; g.beginPath(); g.moveTo(mid, mid - N * 0.22); g.lineTo(mid + N * 0.08, mid - N * 0.04); g.lineTo(mid, mid); g.closePath(); g.fill(); }
       } else {
         g.font = `bold ${N * 0.4}px ${FONT_PIXEL}`; g.textAlign = 'center'; g.textBaseline = 'middle';
         g.fillText('$', mid, mid + N * 0.02);
@@ -314,15 +192,16 @@ export class World {
 
   _coins() {
     this.objMeshes = COIN_TYPES.map((c) => {
-      const geo = new THREE.CylinderGeometry(c.radius, c.radius, c.thickness, c.segments, 1); // axis Y
+      const geo = coinGeometry(c.radius, c.thickness, c.segments);
       const faces = this._coinFaceTextures(c);
-      const side = new THREE.MeshStandardMaterial({ color: c.edge, metalness: c.metal, roughness: c.rough + 0.1, envMap: this.envMap, envMapIntensity: 1.0 });
-      const face = new THREE.MeshStandardMaterial({ map: faces.map, bumpMap: faces.bump, bumpScale: 2.0, metalness: c.metal, roughness: c.rough, envMap: this.envMap, envMapIntensity: 1.05 });
+      const side = new THREE.MeshStandardMaterial({ color: c.edge, metalness: c.metal, roughness: c.rough + 0.05, envMap: this.envMap, envMapIntensity: 1.1 });
+      const face = new THREE.MeshStandardMaterial({ map: faces.map, bumpMap: faces.bump, bumpScale: 2.0, metalness: c.metal, roughness: c.rough, envMap: this.envMap, envMapIntensity: 1.1 });
       if (c.key === 'rare') { face.emissive = new THREE.Color(0x0a6a78); face.emissiveIntensity = 0.8; }
-      const im = new THREE.InstancedMesh(geo, [side, face, face], this.maxBodies);
+      const im = new THREE.InstancedMesh(geo, [side, face], this.maxBodies);
       im.frustumCulled = false;
       im.count = 0;
       im.castShadow = true;
+      im.receiveShadow = true;
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       im.setColorAt(0, new THREE.Color(1, 1, 1));
       im.instanceColor.setUsage(THREE.DynamicDrawUsage);
@@ -333,214 +212,204 @@ export class World {
     this._gold = new THREE.Color(1.5, 1.2, 0.55);
   }
 
-  // ---------- stage building ----------
-  _box(w, h, d, mat, x, y, z, parent, shadow = true) {
-    const geo = new THREE.BoxGeometry(w, h, d);
-    this._geos.push(geo);
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, y, z);
-    m.castShadow = shadow;
-    m.receiveShadow = true;
-    parent.add(m);
-    return m;
+  // =============================================================================================
+  // stage building
+  // =============================================================================================
+  _build(def, theme) {
+    const M = this.M;
+    const group = new THREE.Group();
+    const geos = [], texs = [], mats = [];
+    const S = { def, theme, group, geos, texs, mats, slots: [], props: [], pistons: [], belts: [], fans: [], magnets: [], launchers: [], gates: [], rollers: [], lamps: [] };
+
+    // house: walls + floor + wall platforms + funnel plates, one seamless beveled mesh
+    const house = buildHouse(def);
+    geos.push(house.geometry);
+    const hm = this.lib.house(theme);
+    const mesh = new THREE.Mesh(house.geometry, hm);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.customDepthMaterial = this.lib.houseDepth();
+    group.add(mesh);
+    S.house = mesh; S.parts = house.parts; S.houseMats = hm;
+    // entrance / exit slots (house parts + conveyors) by height: drives stagger order and prop timing
+    house.parts.forEach((p, i) => { if (i > 0) S.slots.push({ part: i, top: p.top, side: p.side, kind: p.kind, props: [] }); });
+    const slotFor = (top, side) => S.slots.find((s) => Math.abs(s.top - top) < 0.02 && (!side || s.side === side));
+
+    // conveyors
+    for (const b of def.blocks) {
+      if (b.kind !== 'belt') continue;
+      const bt = buildBelt(M, b, geos, texs);
+      mats.push(bt.mat);
+      group.add(bt.group);
+      S.belts.push(bt);
+      S.slots.push({ part: -1, top: b.y1, side: b.side === 'L' ? -1 : 1, kind: 'belt', props: [{ obj: bt.group, anim: 'popIn' }] });
+    }
+    // pistons
+    for (const pd of def.pistons) {
+      const p = buildPiston(M, pd, geos);
+      group.add(p.group);
+      S.pistons.push(p);
+      const slot = pd.id === 'sweeper' ? S.slots.find((s) => s.kind === 'plate') : slotFor(pd.top);
+      (slot ? slot.props : S.props).push({ obj: p.group, anim: 'popIn' });
+    }
+    // fans + wind streaks
+    for (const fd of def.fans) {
+      const f = buildFan(M, fd);
+      group.add(f.group);
+      f.streaks = [];
+      for (let k = 0; k < 9; k++) { const s = windStreak(M); s.userData = { off: k / 9, row: (k * 0.6180339) % 1 }; s.visible = false; group.add(s); f.streaks.push(s); }
+      S.fans.push(f);
+      const slot = slotFor(fd.y0, -1);
+      (slot ? slot.props : S.props).push({ obj: f.group, anim: 'popIn' });
+    }
+    // magnets on the pillar
+    for (const md of def.magnets) {
+      const m = buildMagnet(M, md);
+      mats.push(m.glow.material);
+      group.add(m.group);
+      S.magnets.push(m);
+      S.props.push({ obj: m.group, anim: 'popIn', late: true });
+    }
+    // launch pads
+    for (const ld of def.launchers) {
+      const l = buildLauncher(M, ld, geos);
+      mats.push(l.mat); texs.push(l.mat.map);
+      group.add(l.group);
+      S.launchers.push(l);
+      const slot = slotFor(ld.top);
+      (slot ? slot.props : S.props).push({ obj: l.group, anim: 'popIn' });
+    }
+    // multiplier gates
+    for (const gd of def.gates) {
+      const g = buildGate(M, gd, geos);
+      mats.push(g.field.material);
+      group.add(g.group);
+      S.gates.push(g);
+      S.props.push({ obj: g.group, anim: 'growUp', late: true });
+    }
+    // grinder (identical on every stage: never animated, so the swap is invisible there)
+    const gr = buildGrinder(M, def.pit, geos);
+    group.add(gr.group);
+    S.rollers = gr.rollers; S.lamps = gr.lamps;
+    // ordering: top to bottom
+    S.slots.sort((a, b) => b.top - a.top);
+    return S;
   }
 
-  _cyl(r, h, seg, mat, parent, rotZ = 0, rotX = 0) {
-    const geo = new THREE.CylinderGeometry(r, r, h, seg);
-    if (rotZ) geo.rotateZ(rotZ);
-    if (rotX) geo.rotateX(rotX);
-    this._geos.push(geo);
-    const m = new THREE.Mesh(geo, mat);
-    m.castShadow = true;
-    m.receiveShadow = true;
-    parent.add(m);
-    return m;
+  _dispose(S) {
+    if (!S) return;
+    this.scene.remove(S.group);
+    for (const g of S.geos) g.dispose();
+    for (const t of S.texs) t.dispose();
+    for (const m of S.mats) m.dispose();
+  }
+
+  _applyThemeInstant(theme) {
+    this.backdrop.setTheme(theme);
+    this._setLight(this._lightOf(theme));
+    this.light.cur = this._lightOf(theme);
+  }
+
+  _lightOf(th) {
+    const L = th.light;
+    return { sky: new THREE.Color(L.sky), ground: new THREE.Color(L.ground), hemi: L.hemi, key: new THREE.Color(L.key), keyI: L.keyI, fill: new THREE.Color(L.fill), fillI: L.fillI };
+  }
+  _setLight(L) {
+    this.hemi.color.copy(L.sky); this.hemi.groundColor.copy(L.ground); this.hemi.intensity = L.hemi;
+    this.sun.color.copy(L.key); this.sun.intensity = L.keyI;
+    this.fill.color.copy(L.fill); this.fill.intensity = L.fillI;
+  }
+  _lerpLight(a, b, k) {
+    const c = (x, y) => x.clone().lerp(y, k), n = (x, y) => x + (y - x) * k;
+    return { sky: c(a.sky, b.sky), ground: c(a.ground, b.ground), hemi: n(a.hemi, b.hemi), key: c(a.key, b.key), keyI: n(a.keyI, b.keyI), fill: c(a.fill, b.fill), fillI: n(a.fillI, b.fillI) };
   }
 
   setStage(def, animate) {
-    if (this.stageGroup) {
-      this.scene.remove(this.stageGroup);
-      for (const g of this._geos) g.dispose();
-      this._geos = [];
+    const theme = themeFor(def.n);
+    if (this.tl) { this.tl.finish(); this.tl = null; }
+    if (!animate || !this.stage) {
+      this._dispose(this.stage);
+      this.lib.resetParts();
+      this.stage = this._build(def, theme);
+      this.scene.add(this.stage.group);
+      this.pipe.position.set(def.pipe.x, def.pipe.y, 0);
+      this.theme = theme;
+      this._applyThemeInstant(theme);
+      this.pulse = 0;
+      if (this.onTransition) this.onTransition(false);
+      return;
     }
-    const g = new THREE.Group();
-    this.stageGroup = g;
-    this.scene.add(g);
-    const V = (this.vis = { pistons: [], belts: [], fans: [], magnets: [], launchers: [], gates: [], rollers: [], streaks: [] });
-    this.def = def;
-    const pal = def.palette;
-    this.palTgt.edge.set(pal.edge); this.palTgt.mid.set(pal.mid); this.palTgt.tint.set(pal.tint);
-    if (!animate) { this.palCur.edge.copy(this.palTgt.edge); this.palCur.mid.copy(this.palTgt.mid); this.palCur.tint.copy(this.palTgt.tint); this._applyPalette(); }
+    this._transition(def, theme);
+  }
 
-    const M = this.mats;
-    // side walls (thick light columns, outer edge of the screen)
-    for (const s of [-1, 1]) {
-      const wm = [M.side, M.side, M.top, M.side, M.wall, M.side];
-      this._box(WALL_W, 18.4, SLAB_Z * 2 + 0.16, wm, s * (IN_HALF + WALL_W / 2), 7.6, 0.08, g);
-    }
-    // platforms, columns and belts
-    for (const b of def.blocks) {
-      const w = b.x1 - b.x0, h = b.y1 - b.y0, cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
-      if (b.kind === 'belt') {
-        const beltTop = M.beltTop.clone();
-        beltTop.map = this.tex.belt.clone();
-        beltTop.map.needsUpdate = true;
-        beltTop.map.repeat.set(w / 0.45, 1);
-        const mats = [M.beltBody, M.beltBody, beltTop, M.beltBody, M.beltBody, M.beltBody];
-        this._box(w, h, SLAB_Z * 2, mats, cx, cy, 0, g);
-        // end rollers
-        for (const ex of [b.x0 + 0.05, b.x1 - 0.05]) {
-          const r = this._cyl(h * 0.38, SLAB_Z * 2 + 0.02, 14, M.metalDark, g, 0, Math.PI / 2);
-          r.position.set(ex, cy, 0);
+  // completed stage -> celebration -> old interior retracts into the walls -> swap -> new one grows out
+  _transition(def, theme) {
+    const tl = (this.tl = new Timeline());
+    const old = this.stage, oldTheme = this.theme;
+    const U = this.lib.uParts.value;
+    const emit = (...a) => this.particles.emit(...a);
+    if (this.onTransition) this.onTransition(true);
+
+    tl.call(T.celebrate, () => {
+      (CELEBRATE[oldTheme.anim.celebrate] || CELEBRATE.sparkBurst)(emit, oldTheme.accent);
+      this.flash = 1; this.lightPulse = 1;
+      this.backdrop.u.uFlashCol.value.set(oldTheme.accent).lerp(new THREE.Color(0xffffff), 0.5).multiplyScalar(0.55);
+    });
+    // exit, bottom to top, props first
+    const ex = PART_EXIT[oldTheme.anim.exit] || PART_EXIT.retract;
+    const outSlots = old.slots.slice().reverse();
+    outSlots.forEach((s, i) => {
+      const at = T.exitAt + i * ex.stagger;
+      for (const pr of s.props) tl.add(at, OBJ.shrinkOut.dur, (_e, k) => OBJ.shrinkOut.run(pr.obj, k));
+      const e2 = s.kind === 'base' ? PART_EXIT.lower : ex;
+      if (s.part > 0) tl.add(at + 0.08, e2.dur, (_e, k) => e2.run(U[s.part], k));
+    });
+    for (const pr of old.props) tl.add(T.exitAt, OBJ.shrinkOut.dur, (_e, k) => OBJ.shrinkOut.run(pr.obj, k));
+
+    // lights + backdrop
+    const fromL = this.light.cur, toL = this._lightOf(theme);
+    tl.add(T.lightAt, T.lightDur, (e) => { this.light.cur = this._lerpLight(fromL, toL, e); }, Ease.inOutSine);
+    tl.call(T.blendAt, () => this.backdrop.beginBlend(theme));
+    tl.add(T.blendAt, T.blendDur, (e) => this.backdrop.setMix(e), Ease.inOutCubic);
+    tl.call(T.blendAt + T.blendDur + 0.01, () => this.backdrop.finish());
+
+    // swap + entrance
+    tl.call(T.swapAt, () => {
+      this._dispose(old);
+      const S = (this.stage = this._build(def, theme));
+      this.theme = theme;
+      this.scene.add(S.group);
+      this.pipe.position.set(def.pipe.x, def.pipe.y, 0);
+      // the new walls take over the old wall colours and blend to their own, so the re-skin is not a hard cut
+      const [nf, ns] = S.houseMats;
+      const fromF = new THREE.Color(oldTheme.surface.color), toF = new THREE.Color(theme.surface.color);
+      const fromS = new THREE.Color(oldTheme.trim.color), toS = new THREE.Color(theme.trim.color);
+      tl.add(T.swapAt, 0.8, (e) => { nf.color.copy(fromF).lerp(toF, e); ns.color.copy(fromS).lerp(toS, e); }, Ease.inOutSine);
+      const en = PART_ENTER[theme.anim.enter] || PART_ENTER.extrude;
+      this.lib.resetParts();
+      let last = T.enterAt;
+      S.slots.forEach((s, i) => {
+        const at = T.enterAt + i * en.stagger;
+        const e2 = s.kind === 'base' ? PART_ENTER.grow : en;
+        if (s.part > 0) { e2.run(U[s.part], 0); tl.add(at, e2.dur, (_e, k) => e2.run(U[s.part], k)); }
+        for (const pr of s.props) {
+          const a = OBJ[pr.anim];
+          a.run(pr.obj, 0);
+          tl.add(at + en.dur * 0.55, a.dur, (_e, k) => a.run(pr.obj, k));
         }
-        // light cladding under the belt so it reads as a machine part of the same family
-        this._box(w, 0.12, SLAB_Z * 2, [M.side, M.side, M.top, M.side, M.front, M.side], cx, b.y0 + 0.06, 0, g);
-        V.belts.push({ map: beltTop.map, dir: b.side === 'L' ? 1 : -1 });
-      } else {
-        const mats = [M.side, M.side, M.top, M.side, M.front, M.side];
-        this._box(w, h, SLAB_Z * 2, mats, cx, cy, 0, g);
+        last = Math.max(last, at + en.dur);
+      });
+      for (const pr of S.props) {
+        const a = OBJ[pr.anim];
+        a.run(pr.obj, 0);
+        tl.add(last - 0.1, a.dur, (_e, k) => a.run(pr.obj, k));
       }
-    }
-    for (const p of def.plates) {
-      const m = this._box(p.halfLen * 2, p.thick, SLAB_Z * 2, [M.side, M.side, M.top, M.side, M.front, M.side], p.cx, p.cy, 0, g);
-      m.rotation.z = p.ang;
-    }
-
-    // dispenser pipe
-    this.pipe = new THREE.Group();
-    this.pipe.position.set(def.pipe.x, def.pipe.y, 0);
-    const body = this._cyl(0.5, 3.2, 20, M.green, this.pipe);
-    body.position.y = 1.6 + 0.16;
-    const lip = this._cyl(0.68, 0.34, 20, M.green, this.pipe);
-    lip.position.y = 0.17;
-    const ring = this._cyl(0.7, 0.07, 20, M.greenDark, this.pipe);
-    ring.position.y = 0.0;
-    g.add(this.pipe);
-
-    // grinder / collector in the pit
-    const pit = def.pit;
-    const pw = pit.x1 - pit.x0;
-    this._box(pw, 0.9, 0.5, M.dark, (pit.x0 + pit.x1) / 2, 0.45, -0.25, g, false);
-    const n = Math.max(3, Math.round(pw / 0.5));
-    for (let i = 0; i < n; i++) {
-      const x = pit.x0 + (pw * (i + 0.5)) / n;
-      const roller = new THREE.Group();
-      roller.position.set(x, 0.66, 0.0);
-      const cyl = this._cyl(0.2, 0.9, 12, i % 2 ? M.dark : M.green, roller, 0, Math.PI / 2);
-      cyl.castShadow = false;
-      for (let k = 0; k < 6; k++) {
-        const a = (k / 6) * Math.PI * 2;
-        const sp = new THREE.Mesh(this._coneGeo(), M.metal);
-        sp.position.set(Math.cos(a) * 0.23, Math.sin(a) * 0.23, 0);
-        sp.rotation.z = a - Math.PI / 2;
-        roller.add(sp);
-      }
-      g.add(roller);
-      V.rollers.push({ obj: roller, dir: i % 2 ? -1 : 1 });
-    }
-    // light rim in front of the grinder
-    this._box(pw, 0.16, 0.12, M.metalDark, (pit.x0 + pit.x1) / 2, 0.08, 0.5, g, false);
-
-    // pistons
-    for (const pd of def.pistons) {
-      const grp = new THREE.Group();
-      g.add(grp);
-      const wallSide = pd.dir > 0 ? -1 : 1;
-      // hazard decal on the wall face + dark port
-      const decal = this._box(0.5, 0.78, 0.06, M.hazard, wallSide * (IN_HALF + 0.3), pd.y, SLAB_Z + 0.1, grp);
-      decal.castShadow = false;
-      const port = this._box(0.05, HEAD.hy * 2 + 0.06, HEAD.hz * 2 + 0.04, M.dark, wallSide * IN_HALF, pd.y, 0, grp, false);
-      port.rotation.z = pd.ang || 0;
-      const rod = this._box(1, HEAD.hy * 2 - 0.1, HEAD.hz * 2 - 0.16, M.metalDark, 0, pd.y, 0, grp);
-      const head = this._box(HEAD.hw * 2, HEAD.hy * 2, HEAD.hz * 2, M.metal, 0, pd.y, 0, grp);
-      const stripe = this._box(HEAD.hw * 2 + 0.01, HEAD.hy * 2 - 0.14, 0.1, M.hazard, 0, pd.y, HEAD.hz - 0.02, grp);
-      stripe.castShadow = false;
-      V.pistons.push({ def: pd, rod, head, stripe, port });
-    }
-
-    // fans (air blowers): red disc on the wall with a spinning propeller + wind streaks
-    for (const fd of def.fans) {
-      const fg = new THREE.Group();
-      fg.position.set(-IN_HALF - 0.1, fd.y, SLAB_Z + 0.12);
-      const disc = this._cyl(0.55, 0.14, 20, M.red, fg, 0, Math.PI / 2);
-      const prop = new THREE.Group();
-      for (let k = 0; k < 3; k++) {
-        const blade = this._box(0.18, 0.62, 0.05, M.metal, 0, 0, 0.1, prop, false);
-        blade.position.set(0, 0, 0.1);
-        blade.rotation.z = (k / 3) * Math.PI * 2;
-        blade.geometry.translate(0, 0.28, 0);
-      }
-      fg.add(prop);
-      g.add(fg);
-      const streaks = [];
-      for (let k = 0; k < 9; k++) {
-        const s = this._box(0.7, 0.03, 0.03, M.wind, 0, 0, 0, g, false);
-        s.userData = { off: k / 9, row: (k * 0.6180339) % 1 };
-        streaks.push(s);
-      }
-      V.fans.push({ def: fd, prop, streaks });
-    }
-    // magnets: red horseshoe on the column front
-    for (const md of def.magnets) {
-      const mg = new THREE.Group();
-      mg.position.set(-0.05, md.y, SLAB_Z + 0.12);
-      this._box(0.5, 0.14, 0.2, M.red, 0, 0.22, 0, mg);
-      this._box(0.14, 0.5, 0.2, M.red, -0.18, 0, 0, mg);
-      this._box(0.14, 0.5, 0.2, M.red, 0.18, 0, 0, mg);
-      this._box(0.14, 0.14, 0.2, M.metal, -0.18, -0.3, 0, mg);
-      this._box(0.14, 0.14, 0.2, M.metal, 0.18, -0.3, 0, mg);
-      const glow = new THREE.Mesh(new THREE.RingGeometry(0.4, 0.46, 24), new THREE.MeshBasicMaterial({ color: 0xff6a6a, transparent: true, opacity: 0.0, depthWrite: false }));
-      glow.position.z = 0.15;
-      mg.add(glow);
-      g.add(mg);
-      V.magnets.push({ def: md, glow, group: mg });
-    }
-    // launcher pads: chevron inlay on the platform lip
-    for (const ld of def.launchers) {
-      const padGeo = new THREE.PlaneGeometry(ld.x1 - ld.x0, SLAB_Z * 1.5);
-      this._geos.push(padGeo);
-      const pm = this.mats.orange.clone();
-      pm.map = this.tex.chevron.clone();
-      pm.map.needsUpdate = true;
-      pm.map.wrapS = pm.map.wrapT = THREE.RepeatWrapping;
-      pm.map.repeat.set((ld.x1 - ld.x0) / 0.3, 1);
-      const pad = new THREE.Mesh(padGeo, pm);
-      pad.rotation.x = -Math.PI / 2;
-      pad.position.set((ld.x0 + ld.x1) / 2, ld.top + 0.004, 0);
-      pad.receiveShadow = true;
-      g.add(pad);
-      const spring = this._box(0.3, 0.2, 0.16, M.metal, (ld.x0 + ld.x1) / 2, ld.top - 0.35, SLAB_Z + 0.02, g);
-      V.launchers.push({ def: ld, pad, mat: pm, spring });
-    }
-    // multiplier gates: two posts + translucent field with "x2"
-    for (const gd of def.gates) {
-      const gg = new THREE.Group();
-      const w = gd.x1 - gd.x0, h = gd.y1 - gd.y0;
-      // posts and field share the same depth plane so they line up exactly in the camera view
-      this._box(0.1, h, 0.1, M.greenDark, gd.x0, (gd.y0 + gd.y1) / 2, 0.4, gg);
-      this._box(0.1, h, 0.1, M.greenDark, gd.x1, (gd.y0 + gd.y1) / 2, 0.4, gg);
-      const field = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M.glass.clone());
-      this._geos.push(field.geometry);
-      field.position.set((gd.x0 + gd.x1) / 2, (gd.y0 + gd.y1) / 2, 0.4);
-      gg.add(field);
-      g.add(gg);
-      V.gates.push({ def: gd, field });
-    }
-    this.pulse = 0;
+      tl.call(last + 0.5, () => { this.lib.resetParts(); if (this.onTransition) this.onTransition(false); });
+    });
   }
 
-  _coneGeo() {
-    if (!this._cone) this._cone = new THREE.ConeGeometry(0.07, 0.2, 5);
-    return this._cone;
-  }
-
-  _applyPalette() {
-    this.bgU.cEdge.value.copy(this.palCur.edge);
-    this.bgU.cMid.value.copy(this.palCur.mid);
-    for (const m of this.tintMats) m.color.copy(this.palCur.tint);
-  }
-
-  // ---------- camera ----------
+  // =============================================================================================
+  // camera
+  // =============================================================================================
   // orthographic frustum: whole machine (7.4 x 15.2) visible; slight downward pitch so platform tops and coin faces show depth
   fit(cssW, cssH, aspect) {
     const cam = this.camera;
@@ -577,7 +446,9 @@ export class World {
     return { x: a.x + dir.x * t, y: a.y + dir.y * t };
   }
 
-  // ---------- per-frame ----------
+  // =============================================================================================
+  // per-frame
+  // =============================================================================================
   syncObjects(physics) {
     const counts = new Array(this.objMeshes.length).fill(0);
     const arrs = this.objMeshes.map((m) => m.instanceMatrix.array);
@@ -616,81 +487,102 @@ export class World {
   update(dt, machines) {
     this.t += dt;
     const t = this.t;
-    // palette fade
-    const k = Math.min(1, dt * 2.2);
-    this.palCur.edge.lerp(this.palTgt.edge, k);
-    this.palCur.mid.lerp(this.palTgt.mid, k);
-    this.palCur.tint.lerp(this.palTgt.tint, k);
-    this._applyPalette();
+    if (this.tl) { this.tl.update(dt); if (this.tl.finished) this.tl = null; }
+    this.backdrop.update(dt);
+
+    // lighting: theme light + stage-complete pulse
+    if (this.light.cur) {
+      this._setLight(this.light.cur);
+      if (this.lightPulse > 0) { this.sun.intensity *= 1 + 0.45 * this.lightPulse; this.hemi.intensity *= 1 + 0.25 * this.lightPulse; }
+    }
+    this.lightPulse = Math.max(0, this.lightPulse - dt * 1.6);
+    this.flash = Math.max(0, this.flash - dt * 2.0);
+    this.backdrop.u.uFlash.value = Ease.outQuad(this.flash);
+
     if (this.pulse > 0) this.pulse = Math.max(0, this.pulse - dt * 4);
     if (this.pipeKick > 0) this.pipeKick = Math.max(0, this.pipeKick - dt * 6);
-    if (this.pipe) this.pipe.scale.set(1 + 0.06 * this.pipeKick, 1 - 0.08 * this.pipeKick, 1 + 0.06 * this.pipeKick);
+    this.pipe.scale.set(1 + 0.06 * this.pipeKick, 1 - 0.08 * this.pipeKick, 1 + 0.06 * this.pipeKick);
 
-    const V = this.vis;
+    const S = this.stage;
+    if (!S) return;
+    this._idle(t, dt);
     if (machines) {
-      // pistons
-      V.pistons.forEach((v, i) => {
+      // pistons (positions in the piston group's local frame: x along the piston axis from the wall)
+      S.pistons.forEach((v, i) => {
         const p = machines.pistons[i];
         if (!p) return;
         const d = v.def;
-        const ang = d.ang || 0;
-        const ux = d.dir * Math.cos(ang), uy = d.dir * Math.sin(ang);
-        const at = (sPos) => [d.wall + ux * sPos, d.y + uy * sPos];
-        const hs = p.ext - HEAD.hw;
-        const [hx, hy] = at(hs);
-        v.head.position.set(hx, hy, 0);
-        v.stripe.position.set(hx, hy, 0 + HEAD.hz - 0.02);
+        const hs = p.ext - 0.14; // HEAD.hw
+        v.head.position.set(d.dir * hs, 0, 0);
         const s0 = -0.2;
         const len = Math.max(0.01, hs - s0);
-        const [rx, ry] = at((s0 + hs) / 2);
         v.rod.scale.x = len;
-        v.rod.position.set(rx, ry, 0);
-        v.head.rotation.z = v.rod.rotation.z = v.stripe.rotation.z = ang;
+        v.rod.position.set((d.dir * (s0 + hs)) / 2, 0, 0);
       });
-      V.belts.forEach((v, i) => {
+      S.belts.forEach((v, i) => {
         const b = machines.belts[i];
-        if (b) v.map.offset.x -= v.dir * b.speed * dt * 0.6;
+        if (!b) return;
+        const du = v.dir * b.speed * dt * (1 / 0.9);
+        for (const tx of v.texs) tx.offset.x -= du;
+        for (const h of v.hubs) h.rotation.z -= v.dir * b.speed * dt * 4;
       });
-      V.fans.forEach((v, i) => {
+      S.fans.forEach((v, i) => {
         const f = machines.fans[i];
         if (!f) return;
         v.prop.rotation.z -= dt * (f.on ? 14 : 1.2);
         const d = v.def;
         for (const s of v.streaks) {
-          s.visible = f.on;
-          if (!f.on) continue;
+          s.visible = f.on && !this.tl;
+          if (!s.visible) continue;
           const u = (s.userData.off + t * 0.75) % 1;
           s.position.set(d.x + 0.45 + u * (d.x1 - d.x - 0.4), d.y0 + 0.2 + s.userData.row * (d.y1 - d.y0 - 0.3), 0.3);
           s.scale.x = 0.6 + 0.8 * Math.sin(u * Math.PI);
-          s.material.opacity = 0.55;
         }
       });
-      V.magnets.forEach((v, i) => {
+      S.magnets.forEach((v, i) => {
         const m = machines.magnets[i];
         const on = m && m.on;
-        v.glow.material.opacity = on ? 0.25 + 0.25 * Math.sin(t * 5) : 0;
+        v.glow.material.opacity = on ? 0.3 + 0.25 * Math.sin(t * 5) : 0;
         v.glow.scale.setScalar(1 + (on ? ((t * 1.6) % 1) * 1.1 : 0));
       });
-      V.launchers.forEach((v, i) => {
+      S.launchers.forEach((v, i) => {
         const l = machines.launchers[i];
         if (!l) return;
         const a = Math.max(0, l.anim / 0.3);
-        v.spring.scale.y = 1 + a * 1.4;
+        v.spring.scale.y = 1 + a * 1.2;
         v.mat.color.setScalar(1 + a * 0.6);
       });
-      V.gates.forEach((v, i) => {
+      S.gates.forEach((v, i) => {
         const gt = machines.gates[i];
-        v.field.material.opacity = 0.22 + (gt ? Math.max(0, gt.flash) * 1.2 : 0) + 0.05 * Math.sin(t * 3);
+        v.u.uT.value = t;
+        v.u.uFlash.value = gt ? Math.max(0, gt.flash) : 0;
       });
     }
-    for (const r of V.rollers) r.obj.rotation.z += dt * (3 + 6 * this.pulse) * r.dir;
+    for (const r of S.rollers) r.obj.rotation.z += dt * (3 + 6 * this.pulse) * r.dir;
 
     this.particles.update(dt);
     this.shake = Math.max(0, this.shake - dt * 3);
     this._placeCam(this.shake * 0.25);
   }
 
+  // stage-specific idle: only lights / emissive accents move, structure stays still
+  _idle(t) {
+    const th = this.theme;
+    if (!th) return;
+    const idle = th.anim.idle;
+    const lamp = this.M.lamp;
+    if (idle === 'machineHum') lamp.emissiveIntensity = 0.6 + 0.9 * (Math.sin(t * 3.2) > 0.2 ? 1 : 0.25) + 0.6 * this.pulse;
+    else lamp.emissiveIntensity = 0.9 + 0.3 * Math.sin(t * 1.4) + 0.6 * this.pulse;
+    const side = this.stage.houseMats[1];
+    const base = this.stage.houseMats.baseEmissive || 0;
+    if (idle === 'neonPulse') side.emissiveIntensity = base * (0.65 + 0.35 * Math.sin(t * 1.7)) + this.flash * 0.3;
+    else side.emissiveIntensity = base + this.flash * 0.15;
+    if (this.flash > 0 && !side.emissive.getHex()) side.emissive.set(th.accent);
+  }
+
   dispose() {
+    this._dispose(this.stage);
     this.renderer.dispose();
   }
 }
+

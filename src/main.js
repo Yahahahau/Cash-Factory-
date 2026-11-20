@@ -48,6 +48,8 @@ async function boot() {
   let world;
   try {
     world = new World(canvas, { maxBodies: MAX_BODIES, particles: 200 });
+    // price labels fade out while a stage transition moves the platforms
+    world.onTransition = (busy) => { const l = document.getElementById('labels'); if (l) l.classList.toggle('stage-anim', busy); };
   } catch (e) {
     loadingSub.textContent = 'This device does not support WebGL.';
     throw e;

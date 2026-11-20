@@ -63,6 +63,8 @@ html[data-mode="tablet"] #appwin.max #stage, html[data-mode="desktop"] #appwin.m
 #scene { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; touch-action: none; }
 #c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
 #labels, #floats { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+#labels { transition: opacity .25s ease; }
+#labels.stage-anim { opacity: 0; }
 #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 12; }
 #flash.go { animation: flash .6s ease-out; }
 @keyframes flash { 0% { opacity: .7; } 100% { opacity: 0; } }

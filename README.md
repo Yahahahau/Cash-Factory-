@@ -128,3 +128,6 @@ src/game.js      ลูปเกม ผลิต/เก็บ/เงิน      
 
 ## Player account + cloud save (Supabase)
 Start Menu > Account: e-mail and OAuth sign-in, profile, cloud save with autosave, offline play and an explicit conflict dialog. Inactive until `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are set (see `.env.example`). **Not yet verified against a live Supabase project.** Docs: `docs/backend-setup.md`, `docs/account-system.md`, `docs/cloud-save-system.md`, `docs/account-testing-report.md`. Tests: `npm test`, `npm run test:account`, `bash scripts/sql-test.sh`.
+
+## 3D visual overhaul (stage themes)
+Walls, floor and platforms are one seamless beveled structure with fillets at every join; every machine prop was rebuilt (pipe, pistons, belts, fan, magnet, launch pad, gate, grinder, coins). Each stage has its own theme (Steel Works, Tide Pool, Neon Arcade, Candy Works, Bio Lab, Sun Workshop) with its own surface, lighting, animated back wall and entrance / exit animations; completing a stage plays a celebration and a transition. Code: `src/scene/`. Docs: `docs/3d-model-overhaul.md`, `docs/environment-design.md`, `docs/stage-animation-system.md`, `docs/visual-quality-report.md`. Gameplay and physics are unchanged.
