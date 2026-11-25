@@ -523,3 +523,16 @@ html.mini-active #tasks .task[data-layer="float"] { filter: saturate(.55) bright
 #cloudTray[data-status="failed"], #cloudTray[data-status="conflict"] { color: #ffd0c4; }
 #cloudTray[data-status="synced"] { color: #c9ffbc; }
 @media (max-width: 440px) { .acc-cols { grid-template-columns: 1fr; } .acc-hero { padding: 8px; } }
+
+/* stage clear pop-up text (no window frame) */
+.stagepop { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); text-align: center; color: #fff; pointer-events: none; white-space: nowrap; text-shadow: 2px 2px 0 #003, -1px -1px 0 #003, 1px -1px 0 #003, -1px 1px 0 #003; animation: stagepop 2.6s ease forwards; z-index: 5; }
+.stagepop .sp1 { font-size: clamp(18px, 6vw, 30px); font-weight: bold; }
+.stagepop .sp2 { font-size: clamp(12px, 3.6vw, 18px); color: #fff6a8; margin-top: 6px; }
+.stagepop .sp3 { font-size: clamp(11px, 3vw, 15px); opacity: .9; margin-top: 4px; }
+@keyframes stagepop { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.7); } 12% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); } 20% { transform: translate(-50%, -50%) scale(1); } 75% { opacity: 1; transform: translate(-50%, -50%); } 100% { opacity: 0; transform: translate(-50%, -75%); } }
+
+/* auto-compact HUD on narrow / short screens: smaller bottom panel and icons so the board stays visible */
+@media (max-width: 420px) { .hudbot { width: min(160px, 46%); gap: 4px; } .hudbot .xpbtn { padding: 2px 6px; } .hudwin .hb { padding: 3px 5px 4px; } }
+@media (max-height: 720px) { .hudbot { transform: scale(.88); transform-origin: right bottom; } .hudtop { transform: scale(.92); transform-origin: left top; width: calc((100% - 12px) / .92); } }
+@media (max-height: 600px) { .hudbot { transform: scale(.78); } }
+.xpwin .tico img, .xpwin .tico svg, .sm-item img, .sm-item svg { image-rendering: pixelated; }

@@ -312,16 +312,16 @@ export class UI {
     f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
   }
 
+  // plain white pop-up text over the game (no window): appears, holds, fades away
   stageBanner(stage, reward, bonus) {
-    const kv = (a, b, c = '') => `<div class="xpkv ${c}"><span>${a}</span><b>${b}</b></div>`;
-    const w = XPDialog(this.wm, {
-      id: 'stage', title: 'Stage Complete', ico: 'flag', modal: false, width: 300,
-      message: `<div class="xph">Stage ${stage} cleared!</div><div class="xps">Now entering stage ${stage + 1}.</div>`,
-      extra: `<div class="xppanel">${kv('Cash reward', '+$' + E.fmtCash(reward.cash), 'money')}${kv('Gems', '+' + reward.gems)}${bonus > 0 ? kv('Leftover coins', '+$' + E.fmtCash(bonus), 'money') : ''}</div>`,
-      buttons: [{ id: 'stOk', label: 'OK', def: true, onClick: (win) => win.close() }],
-    });
-    clearTimeout(this._stT);
-    this._stT = setTimeout(() => { if (w && !w.closed) w.close(); }, 5000);
+    const host = document.getElementById('floats') || document.body;
+    const old = host.querySelector('.stagepop'); if (old) old.remove();
+    const el = document.createElement('div');
+    el.className = 'stagepop';
+    const cash = '+$' + E.fmtCash(reward.cash + (bonus > 0 ? bonus : 0));
+    el.innerHTML = `<div class="sp1">STAGE ${stage} CLEAR!</div><div class="sp2">${cash}  +${reward.gems} gems</div><div class="sp3">Stage ${stage + 1}</div>`;
+    host.appendChild(el);
+    setTimeout(() => el.remove(), 2700);
     this.flash();
   }
 
