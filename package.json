@@ -10,6 +10,8 @@
     "preview": "vite preview --host",
     "test": "node scripts/test.mjs && node scripts/account-test.mjs",
     "test:account": "node scripts/account-test.mjs",
+    "sim": "node scripts/sim.mjs",
+    "calibrate": "node scripts/calibrate.mjs",
     "test:physics": "node scripts/physics-test.mjs"
   },
   "dependencies": {

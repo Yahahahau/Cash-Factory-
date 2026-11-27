@@ -16,6 +16,8 @@ import { CursorAssistant } from './cursor.js';
 import { Presentation } from './presentation.js';
 import { CursorSprite } from './cursor-sprite.js';
 import { createAccount } from './account/index.js';
+import * as P from './progression.js';
+import { PARTS, TIERS, COSMETICS } from './content.js';
 
 const QUALITY = {
   low: { limit: 50, rows: 330, dpr: 1.5, shadows: false, shadowMap: 512 },
@@ -125,6 +127,7 @@ async function boot() {
       state = Save.load().state;
       state.settings = { ...keep };
       game.reset(state);
+      world.applyLook(state);
       ui.state = state;
       doSave();
       ui.toast('Progress has been reset.', 2400, { title: 'Reset' });
@@ -139,7 +142,11 @@ async function boot() {
     // ----- runs -----
     onNewRunOpen: () => {
       if (pause.frozen) return;
-      if (!E.canNewRun(state)) { ui.toast('New Run unlocks at stage ' + E.ECON.run.minStage + '.', 2200, { title: 'New Run', icon: 'flag' }); return; }
+      if (!E.canNewRun(state)) {
+        const n = E.newRunNeeds(state);
+        ui.toast(`New Run needs stage ${n.stage} (now ${state.stage}) and ${n.milestones} run milestones (done ${n.done}). See Goals > Milestones.`, 3600, { title: 'New Run', icon: 'flag' });
+        return;
+      }
       openNewRun(ui, state, E.previewNewRun(state), ui.h);
     },
     onNewRun: () => {
@@ -147,12 +154,37 @@ async function boot() {
       audio.unlock();
       const pv = E.applyNewRun(state);
       game.reset(state);
+      world.applyLook(state);
       ui.state = state;
       doSave();
       audio.grade();
       ui.flash();
       ui.toast(`Run ${state.run} started. Starting cash ${E.fmtMoney(state.cash)}, permanent income x${E.permMult(state).toFixed(2)}.`, 3600, { title: 'New Run', icon: 'flag' });
       void pv;
+    },
+    // expansion windows: branch upgrades, parts, missions, collections
+    onProgress: (act, k) => {
+      if (pause.frozen) return;
+      audio.unlock();
+      const fx = (col) => world.particles.emit(0, 8, 1, 14, { color: col, speed: 3.5, life: 0.7, gravity: 5, size: 0.14, up: 0.9 });
+      let ok = false;
+      if (act === 'buy') { ui.h.onBuy(k); return; }
+      if (act === 'cursor') { ui.h.onBuyCursor(); return; }
+      if (act === 'extra') {
+        const i = P.extraInfo(state, k);
+        ok = P.buyExtra(state, k);
+        if (ok && i.lvl === 0) ui.toast(i.name + ' unlocked!', 2000, { title: 'Upgrade Shop', icon: 'check' });
+        if (ok) fx([0xffe066, 0xffffff]);
+      } else if (act === 'part') {
+        ok = P.buyPart(state, k);
+        if (ok) { world.applyLook(state); fx([0x74f6ff, 0xffffff, 0xffe066]); ui.flash(); ui.toast(`${PARTS[k].name} upgraded to ${TIERS[state.parts[k]]}.`, 2400, { title: 'Machine Parts', icon: 'gear' }); game.charges = Math.min(E.maxCharges(state), game.charges); }
+      } else if (act === 'claim') {
+        const m = P.claimMission(state, k);
+        ok = !!m;
+        if (ok) { fx([0x74f6ff, 0xffffff]); ui.toast(`Mission complete: +${m.reward} gems.`, 2200, { title: 'Goals', icon: 'gem' }); }
+      } else if (act === 'reroll') ok = P.rerollMission(state, k);
+      else if (act === 'equip') { ok = P.equip(state, k); if (ok) world.applyLook(state); }
+      if (ok) { audio.buy(); doSave(); } else audio.deny();
     },
     getPresentation: () => presentation.report(),
     getFps: () => Math.round(1000 / Math.max(1, ema)),
@@ -162,6 +194,8 @@ async function boot() {
   ui.lunawave = lunawave;
   lunawave.autoStart(); // the game's music starts by itself (as soon as the browser allows audio)
   ui.state = state;
+  P.ensureMissions(state);
+  world.applyLook(state);
   ui.world = world;
 
   // ---------- Flying Ball: an exclusive session. The main game is frozen (centralized pause) until the window is closed ----------
@@ -359,6 +393,7 @@ async function boot() {
   // ---------- main loop ----------
   let last = performance.now();
   let slowT = 0;
+  const notified = new Set(); // mission / part notifications already shown this session
   let lastNow = Date.now();
   let ema = 16;
   let autoSave = 0;
@@ -397,9 +432,16 @@ async function boot() {
       lastNow = now;
       ui.slowUpdate(state);
       const had = state.perm.unlocks.length;
+      const miles = P.checkMilestones(state);
+      for (const m of miles) ui.toast(`${m.name}${m.cash ? ' · +' + E.fmtMoney(m.cash) : ''}${m.gems ? ' · +' + m.gems + ' gems' : ''}`, 2600, { title: 'Run milestone', icon: 'flag' });
+      P.ensureMissions(state);
+      for (const m of state.missions.active) if (!notified.has(m.id) && P.missionProgress(state, m).done) { notified.add(m.id); ui.toast(P.missionProgress(state, m).text + ' – claim it in Goals.', 2600, { title: 'Mission complete', icon: 'check' }); }
       const na = E.checkAchievements(state);
-      if (state.perm.unlocks.length > had) ui.toast('New Run is now available (New Run button).', 3200, { title: 'Unlocked', icon: 'flag' });
-      if (na.length) ui.toast(na.map((id) => E.ACHIEVEMENTS[id].name).join(', '), 3000, { title: 'Achievement unlocked', icon: 'trophy' });
+      if (state.perm.unlocks.length > had) ui.toast('New Run is now available (Start menu > New Run).', 3200, { title: 'Unlocked', icon: 'flag' });
+      if (na.length) {
+        ui.toast(na.map((id) => E.ACHIEVEMENTS[id].name + (E.ACH_COSMETIC[id] ? ' · new item: ' + COSMETICS[E.ACH_COSMETIC[id]].name : '')).join(', '), 3400, { title: 'Achievement unlocked', icon: 'trophy' });
+      }
+      for (const k of Object.keys(PARTS)) { const i = P.partInfo(state, k); const key = 'pu:' + k + i.tier; if (i.unlocked && !notified.has(key) && i.tier === 0 && state.gems >= i.cost) { notified.add(key); ui.toast(`${i.name} can be installed (Upgrade Shop > Machine Parts).`, 3000, { title: 'Machine Parts', icon: 'gear' }); } }
     }
     autoSave += dt;
     if (autoSave >= 5) { autoSave = 0; doSave(); }
@@ -440,6 +482,7 @@ async function boot() {
       state.mini.session = null;
       E.normalizeClock(state, Date.now());
       game.reset(state);
+      world.applyLook(state);
       ui.state = state;
       ui.wm.closeWhere((w) => ['cursor', 'mini', 'boost', 'newrun'].includes(w.id), true);
       ui.slowUpdate(state);

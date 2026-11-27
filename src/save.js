@@ -1,6 +1,7 @@
 // Save / load with localStorage. Falls back to memory when storage is blocked (some WebViews / iframes).
 // v2 schema = coin-pusher game (the old factory-tycoon v1 save is ignored).
 import { newState, MACHINES, MACHINE_TYPES, GLOBALS, ECON } from './economy.js';
+import { sanitizeExpansion } from './progression.js';
 
 export const SAVE_KEY = 'pixelCashFactory.save.v2';
 let memoryCopy = null;
@@ -64,11 +65,12 @@ export function sanitize(raw) {
   s.mini.session = se && typeof se.id === 'string' ? { id: se.id.slice(0, 40), objective: Math.floor(num(se.objective, 10, 1, 100)), t0: num(se.t0, 0) } : null;
   void ECON;
   s.lastSaved = num(raw.lastSaved, Date.now(), 0, Date.now() + 60000);
+  sanitizeExpansion(s, raw); // v4 fields: branch upgrades, parts, missions, milestones, collections (absent in v3 saves)
   return s;
 }
 
 export function serialize(state) {
-  return JSON.stringify({ v: 3, ...state });
+  return JSON.stringify({ v: 4, ...state });
 }
 
 export function save(state) {

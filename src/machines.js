@@ -82,7 +82,7 @@ export class Machines {
   // ---- pistons ------------------------------------------------------------
   _par(p) {
     // the hopper sweeper runs on a fixed rhythm; platform pistons follow their upgrade level
-    return p.def.rhythm ? { active: true, interval: p.def.rhythm, out: 1.0, back: 1.1 } : E.pusherParams(this.level(p.def.id));
+    return p.def.rhythm ? { active: true, interval: p.def.rhythm, out: 1.0, back: 1.1 } : E.pusherParamsS(this.getState(), this.level(p.def.id));
   }
 
   // kinematic pose from the current extension (pistons may lie along a sloped plate)
@@ -149,7 +149,7 @@ export class Machines {
     const act = phys.active;
     // conveyors
     for (const b of this.belts) {
-      const v = E.conveyorSpeed(this.level(b.def.id));
+      const v = E.conveyorSpeed(this.level(b.def.id)) * E.driveMult(this.getState());
       b.speed = v;
       if (v <= 0) continue;
       for (const idx of act) {
@@ -163,7 +163,7 @@ export class Machines {
     }
     // air blowers
     for (const f of this.fans) {
-      const force = E.blowerForce(this.level(f.def.id));
+      const force = E.blowerForce(this.level(f.def.id)) * E.driveMult(this.getState());
       f.on = force > 0;
       if (!f.on) continue;
       const len = f.def.x1 - f.def.x;
@@ -177,7 +177,7 @@ export class Machines {
     }
     // magnets
     for (const m of this.magnets) {
-      const force = E.magnetForce(this.level(m.def.id));
+      const force = E.magnetForce(this.level(m.def.id)) * E.driveMult(this.getState());
       m.on = force > 0;
       if (!m.on) continue;
       for (const idx of act) {
@@ -200,7 +200,7 @@ export class Machines {
         const s = phys.slots[idx];
         const p = s.body.translation();
         if (p.x < l.def.x0 || p.x > l.def.x1 || p.y < l.def.top - 0.05 || p.y > l.def.top + 0.6) continue;
-        const m = MASS[s.type] * par.power * 0.25;
+        const m = MASS[s.type] * par.power * 0.25 * Math.min(1.25, E.driveMult(this.getState()));
         s.body.applyImpulse({ x: l.def.dir * m * 1.6, y: m * 1.5, z: 0 }, true);
         l.cd = par.cooldown;
         l.anim = 0.3;

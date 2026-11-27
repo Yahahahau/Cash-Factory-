@@ -1,7 +1,7 @@
 // Pure functions (no DOM, no network): what goes to the cloud, how two saves are compared and what to do about it.
 import { sanitize } from '../save.js';
 
-export const SAVE_VERSION = 3; // matches save.js serialize() `v`
+export const SAVE_VERSION = 4; // matches save.js serialize() `v`
 export const PAYLOAD_FORMAT = 1;
 
 // The cloud copy holds progression only. Device preferences (graphics, volumes), the transient Flying Ball session and the local
@@ -48,7 +48,8 @@ export function fingerprint(state) {
 export function milestoneKey(s) {
   return [s.stage, s.run, s.perm.bestStage, s.perm.points, s.perm.runsCompleted, s.perm.achievements.length, s.perm.unlocks.length,
     Math.floor(s.gems), s.levels.rate, s.levels.capacity, s.levels.rare, Object.values(s.machines).join('.'), s.cursor.owned ? 1 : 0,
-    s.mini.plays, s.mini.wins, s.stats.upgradesBought].join('|');
+    s.mini.plays, s.mini.wins, s.stats.upgradesBought, Object.values(s.xlv || {}).join('.'), Object.values(s.parts || {}).join('.'),
+    (s.runMilestones || []).length, s.stats.missionsDone || 0].join('|');
 }
 
 export function hasProgress(s) {

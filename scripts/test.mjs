@@ -224,17 +224,23 @@ t('offline income counts the boost only for the overlapping time', () => {
 t('new run: temporary state resets, permanent progress is kept, prices rise, points convert to income', () => {
   const s = E.newState();
   eq(E.canNewRun(s), false);
-  s.stage = 9; s.cash = 12345; s.levels.rate = 7; s.machines.pusherB = 4; s.progress = 33; s.gems = 41; s.stats.totalEarned = 9999; s.runStats.earned = 5000;
-  s.boost = { mult: 4, until: Date.now() + 99999 }; s.mini.best = 14; s.perm.bestStage = 9;
+  s.stage = 11; s.cash = 12345; s.levels.rate = 7; s.machines.pusherB = 4; s.progress = 33; s.gems = 41; s.stats.totalEarned = 9999; s.runStats.earned = 5000;
+  s.boost = { mult: 4, until: Date.now() + 99999 }; s.mini.best = 14; s.perm.bestStage = 11;
+  eq(E.canNewRun(s), false, 'stage alone is not enough: run milestones are required');
+  s.runMilestones = ['m_piston', 'm_earn1', 'm_stage2', 'm_mach3', 'm_up15', 'm_stage4', 'm_polish', 'm_auto', 'm_earn2', 'm_stage6'];
+  s.xlv.polish = 6; s.parts.deck = 2; s.missions.active = [{ id: 'q0', kind: 'coins', target: 5, base: 0, reward: 3 }];
   truthy(E.canNewRun(s));
   const pv = E.previewNewRun(s);
-  eq(pv.run, 2); eq(pv.pointsGain, 8); truthy(pv.startCash === 10 + 20 * 8); truthy(pv.permMult > 1.2);
+  eq(pv.run, 2); eq(pv.pointsGain, 10); truthy(pv.startCash === 10 + 20 * 10); truthy(pv.permMult > 1.2);
   E.applyNewRun(s);
-  eq(s.run, 2); eq(s.stage, 1); eq(s.progress, 0); eq(s.cash, 170); eq(s.levels.rate, 0); eq(s.machines.pusherB, 0); eq(s.priceTier, 0);
-  eq(s.gems, 41); eq(s.stats.totalEarned, 9999); eq(s.perm.points, 8); eq(s.perm.runsCompleted, 1); eq(s.perm.bestStage, 9);
+  eq(s.run, 2); eq(s.stage, 1); eq(s.progress, 0); eq(s.cash, 210); eq(s.levels.rate, 0); eq(s.machines.pusherB, 0); eq(s.priceTier, 0);
+  eq(s.gems, 41); eq(s.stats.totalEarned, 9999); eq(s.perm.points, 10); eq(s.perm.runsCompleted, 1); eq(s.perm.bestStage, 11);
   eq(s.mini.best, 14); eq(s.boost.mult, 4, 'boost survives a new run'); eq(s.runStats.earned, 0);
   truthy(E.globalCost('rate', 0, s) > 3, 'new run prices are higher');
   truthy(s.perm.achievements.includes('run1'));
+  eq(s.xlv.polish, 0, 'branch upgrades reset'); eq(s.runMilestones.length, 0, 'run milestones reset');
+  eq(s.parts.deck, 2, 'machine parts are permanent'); eq(s.missions.active.length, 1, 'missions are kept');
+  truthy(s.perm.cosmetics.includes('pipe_ruby'), 'first-run achievement unlocks a collection item');
 });
 
 t('save v3: round trip + old v2 save (no new fields) loads with safe defaults + hostile values clamped', () => {
@@ -380,5 +386,55 @@ t('reactive: attack is faster than release', () => {
   const e0 = r.env; r.env = 0; r.update(1 / 60, spectrum(-20), BIN_HZ); const up = r.env;
   r.env = 1; r.update(1 / 60, spectrum(-60), BIN_HZ); const down = 1 - r.env;
   truthy(up > down, `up ${up.toFixed(3)} down ${down.toFixed(3)}`); void e0;
+});
+
+// ---------------- expansion ----------------
+const P = await import('../src/progression.js');
+t('expansion: branch upgrades unlock by stage, cost cash, change formulas', () => {
+  const s = E.newState(); s.cash = 1e9;
+  eq(P.buyExtra(s, 'polish'), false, 'locked on stage 1');
+  s.stage = 2;
+  const v0 = E.coinValue(s, 0);
+  truthy(P.buyExtra(s, 'polish')); eq(s.xlv.polish, 1);
+  truthy(Math.abs(E.coinValue(s, 0) / v0 - 1.05) < 1e-9, 'coin polish +5%');
+  s.stage = 6; truthy(P.buyExtra(s, 'golden')); truthy(E.goldenChance(s) > 0);
+  s.stage = 3; s.xlv.bounty = 4; s.progress = 1e9;
+  const r = E.completeStage(s); eq(r.cash, Math.round(E.stageReward(3).cash * 1.6)); eq(r.gems, E.stageReward(3).gems + 2);
+});
+t('expansion: machine parts need best stage + gems, are permanent and change the machine', () => {
+  const s = E.newState(); s.gems = 500;
+  eq(P.buyPart(s, 'piston'), false, 'needs best stage 2');
+  s.perm.bestStage = 4;
+  const c0 = E.capacity(s); truthy(P.buyPart(s, 'frame')); eq(E.capacity(s), c0 + 4);
+  truthy(P.buyPart(s, 'piston')); truthy(P.buyPart(s, 'piston'));
+  truthy(E.pusherParamsS(s, 5).interval < E.pusherParams(5).interval, 'piston drive pushes faster');
+  eq(P.buyPart(s, 'piston'), false, 'Gold tier needs stage 6');
+  eq(s.gems, 500 - 8 - 8 - 20);
+});
+t('expansion: missions track only new progress, pay gems, refill; milestones pay once', () => {
+  const s = E.newState(); s.stats.coinsCollected = 1000;
+  P.ensureMissions(s); eq(s.missions.active.length, 3);
+  const m = s.missions.active.find((x) => x.kind === 'coins');
+  truthy(m && !P.missionProgress(s, m).done, 'old coins do not count');
+  s.stats.coinsCollected += m.target;
+  const g = s.gems; truthy(P.claimMission(s, m.id)); eq(s.gems, g + m.reward); eq(s.missions.active.length, 3); eq(P.claimMission(s, m.id), null, 'cannot claim twice');
+  s.machines.pusherA = 1;
+  const d1 = P.checkMilestones(s); truthy(d1.some((x) => x.id === 'm_piston')); eq(P.checkMilestones(s).length, 0);
+});
+t('expansion: collections are cosmetic, only owned items can be equipped', () => {
+  const s = E.newState();
+  eq(P.equip(s, 'pipe_ruby'), false); s.perm.cosmetics.push('pipe_ruby'); truthy(P.equip(s, 'pipe_ruby')); eq(P.equipped(s, 'pipe'), 'pipe_ruby');
+});
+t('save v4: expansion fields round-trip; a v3 save migrates without losing anything', () => {
+  const s = E.newState(); s.xlv.polish = 3; s.parts.drive = 2; s.perm.cosmetics.push('pipe_gold'); s.perm.equip.pipe = 'pipe_gold'; s.runMilestones = ['m_piston'];
+  P.ensureMissions(s);
+  const r = sanitize(JSON.parse(serialize(s)));
+  eq(r.xlv.polish, 3); eq(r.parts.drive, 2); eq(r.perm.equip.pipe, 'pipe_gold'); eq(r.missions.active.length, 3); eq(r.runMilestones[0], 'm_piston');
+  const v3 = { v: 3, cash: 900, gems: 12, stage: 7, run: 2, machines: { pusherA: 5 }, levels: { rate: 9 }, perm: { points: 5, bestStage: 7, achievements: ['run1'] }, runStats: { earned: 6e4 } };
+  const m = sanitize(v3);
+  eq(m.cash, 900); eq(m.gems, 12); eq(m.stage, 7); eq(m.machines.pusherA, 5); eq(m.perm.points, 5); eq(m.parts.piston, 0); eq(m.xlv.polish, 0);
+  truthy(m.runMilestones.includes('m_stage6') && m.runMilestones.includes('m_earn2'), 'passed milestones are granted on migration');
+  const evil = sanitize({ xlv: { polish: 1e9, golden: -3 }, parts: { deck: 99 }, missions: { active: [{ id: 'x', kind: 'nope' }] }, perm: { equip: { pipe: 'spark_ice' } } });
+  eq(evil.xlv.polish, 20); eq(evil.xlv.golden, 0); eq(evil.parts.deck, 5); eq(evil.missions.active.length, 0); eq(evil.perm.equip.pipe, 'pipe_green');
 });
 console.log(`\n${pass} tests passed`);

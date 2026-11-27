@@ -1,4 +1,5 @@
 // Pure economy logic (no DOM / three). Shared by the game, the simulator and tests.
+import { EXTRA_IDS, PART_IDS, NEWRUN_STAGE, NEWRUN_MILESTONES, DEFAULT_EQUIP, feederInterval, xl, pt } from './content.js';
 // Coin-pusher incremental: cash + gems, Coin/s, machine upgrades, stage targets, combo, offline income.
 
 export const MAX_OFFLINE_SECONDS_HARD = 12 * 3600;
@@ -16,7 +17,8 @@ export const ECON = {
     tierFloorCash: 100,
   },
   run: {
-    minStage: 6, // a new run can be started from this stage on
+    minStage: NEWRUN_STAGE, // a new run can be started from this stage on (was 6 before the expansion)
+    milestones: NEWRUN_MILESTONES, // ...and once this many run milestones are done
     startCash: 10,
     startCashPerPoint: 20,
     pointsPerStage: 1, // upgrade points awarded for every stage cleared in the run
@@ -98,8 +100,12 @@ export function newState() {
     progress: 0, // coins collected in the current stage
     run: 1, // current run number (a run = one prestige cycle)
     priceTier: 0, // highest balance tier seen this run (drives the wallet price multiplier)
-    runStats: { earned: 0, coins: 0 },
-    perm: { points: 0, bestStage: 1, runsCompleted: 0, bestRunEarned: 0, unlocks: [], achievements: [], cosmetics: [] },
+    runStats: { earned: 0, coins: 0, upgrades: 0, bestCombo: 0 },
+    perm: { points: 0, bestStage: 1, runsCompleted: 0, bestRunEarned: 0, unlocks: [], achievements: [], cosmetics: [], equip: { ...DEFAULT_EQUIP } },
+    xlv: Object.fromEntries(EXTRA_IDS.map((k) => [k, 0])), // branch upgrades (per run)
+    parts: Object.fromEntries(PART_IDS.map((k) => [k, 0])), // machine part tiers (permanent)
+    missions: { active: [], seq: 0 }, // permanent mission board
+    runMilestones: [], // milestone ids completed in this run
     boost: { mult: 1, until: 0 }, // active profit multiplier + expiry timestamp (ms)
     cooldownUntil: 0, // mini-game locked until this timestamp (ms)
     mini: { best: 0, plays: 0, wins: 0, fails: 0, gates: 0, bestMult: 0, session: null },
@@ -118,6 +124,8 @@ export function newState() {
       bestCombo: 0,
       playSeconds: 0,
       offlineEarned: 0,
+      partsUpgraded: 0,
+      missionsDone: 0,
     },
     settings: { pixel: true, sfx: 0.7, music: 0.35, quality: 'high' },
     lastSaved: Date.now(),
@@ -139,19 +147,20 @@ export function stageReward(stage) {
 
 // ---- derived stats --------------------------------------------------------
 export function spawnRate(s) {
-  return 0.45 + 0.3 * s.levels.rate; // coins per second dropped by the dispenser
+  return (0.45 + 0.3 * s.levels.rate) * (1 + 0.05 * pt(s, 'drive')); // coins per second dropped by the dispenser
 }
 export function capacity(s) {
-  return 30 + 8 * s.levels.capacity; // simultaneously active coins (also limited by graphics quality)
+  return 30 + 8 * s.levels.capacity + 4 * pt(s, 'frame'); // simultaneously active coins (also limited by graphics quality)
 }
 export function maxCharges(s) {
-  return 3 + Math.floor(s.levels.capacity / 3);
+  const f = pt(s, 'frame');
+  return 3 + Math.floor(s.levels.capacity / 3) + (f >= 2 ? 1 : 0) + (f >= 4 ? 1 : 0);
 }
 export const CHARGE_TIME = 1.2;
 
 export function typeProbabilities(s) {
   const r = s.levels.rare;
-  const rare = Math.min(0.1, 0.01 + 0.006 * r);
+  const rare = Math.min(0.12, 0.01 + 0.006 * r + 0.004 * pt(s, 'tray'));
   const gold = Math.min(0.2, 0.05 + 0.012 * r);
   const silver = Math.min(0.3, 0.2 + 0.01 * r);
   return [1 - rare - gold - silver, silver, gold, rare];
@@ -170,16 +179,40 @@ export function pickType(s, rnd = Math.random) {
   return 0;
 }
 
-export function comboBonus(combo) {
-  return 1 + Math.min(0.5, Math.floor(combo / 5) * 0.05); // +5% per 5 combo, max +50%
+export function comboCap(s) {
+  return s ? 0.5 * (1 + 0.1 * xl(s, 'combo') + 0.05 * pt(s, 'tray')) : 0.5;
 }
+export function comboBonus(combo, s = null) {
+  return 1 + Math.min(comboCap(s), Math.floor(combo / 5) * 0.05); // +5% per 5 combo, max +50% (raised by Combo Keeper / tray)
+}
+export function comboWindow(s) {
+  return 2.5 + 0.4 * xl(s, 'combo');
+}
+// every value modifier of the expansion in one place (Coin Polish, Coin Deck, Stage Resonance)
+export function valueMods(s) {
+  return (1 + 0.05 * xl(s, 'polish')) * (1 + 0.06 * pt(s, 'deck')) * (1 + 0.03 * xl(s, 'resonance') * Math.max(0, s.stage - 1));
+}
+export function goldenChance(s) {
+  return 0.015 * xl(s, 'golden');
+}
+export const GOLDEN_MULT = 3;
 export function coinValue(s, type, mult = 1, combo = 0) {
-  return COIN_VALUES[type] * stageValueMult(s.stage) * mult * comboBonus(combo);
+  return COIN_VALUES[type] * stageValueMult(s.stage) * mult * comboBonus(combo, s) * valueMods(s);
 }
 
 // machine effects ------------------------------------------------------------
 export function machineLevel(s, id) {
   return s.machines[id] || 0;
+}
+// part-aware variants used by the machines: Piston Drive shortens the push cycle, Main Drive strengthens the rest
+export function pusherParamsS(s, level) {
+  const p = pusherParams(level);
+  if (!p.active) return p;
+  const k = 1 - 0.06 * pt(s, 'piston');
+  return { ...p, interval: Math.max(1.2, p.interval * k), out: Math.max(0.4, p.out * k), back: Math.max(0.55, p.back * k) };
+}
+export function driveMult(s) {
+  return 1 + 0.07 * pt(s, 'drive');
 }
 export function pusherParams(level) {
   // level 0: only the emergency anti-jam stroke (no regular cycling)
@@ -249,6 +282,7 @@ export function buyUpgrade(s, key) {
   if (info.isMachine) s.machines[key] += 1;
   else s.levels[key] += 1;
   s.stats.upgradesBought += 1;
+  s.runStats.upgrades = (s.runStats.upgrades || 0) + 1;
   refreshTier(s);
   return true;
 }
@@ -268,6 +302,7 @@ export function buyCursor(s) {
   s.cursor.owned = true;
   s.cursor.on = true;
   s.stats.upgradesBought += 1;
+  s.runStats.upgrades = (s.runStats.upgrades || 0) + 1;
   refreshTier(s);
   return true;
 }
@@ -315,7 +350,9 @@ export function stageDone(s) {
   return s.progress >= stageTarget(s.stage);
 }
 export function completeStage(s) {
-  const reward = stageReward(s.stage);
+  const base = stageReward(s.stage);
+  const b = xl(s, 'bounty');
+  const reward = { cash: Math.round(base.cash * (1 + 0.15 * b)), gems: base.gems + Math.floor(b / 2) };
   s.cash += reward.cash;
   s.gems += reward.gems;
   s.stats.totalEarned += reward.cash;
@@ -334,14 +371,18 @@ export function activePushers(s) {
 }
 // coins per second the machine can really process: limited by the drop rate and by the pushers
 export function throughput(s) {
-  const pushCap = 0.6 + 0.9 * s.machines.pusherA + 0.6 * s.machines.pusherB;
-  return activePushers(s) > 0 ? Math.min(spawnRate(s), pushCap) : 0;
+  const pushCap = (0.6 + 0.9 * s.machines.pusherA + 0.6 * s.machines.pusherB) * (1 + 0.08 * pt(s, 'piston'));
+  const feed = 1 / feederInterval(xl(s, 'feeder')); // Auto Feeder drops extra coins from the charge pool
+  return activePushers(s) > 0 ? Math.min(spawnRate(s) + Math.min(feed, 1 / CHARGE_TIME), pushCap) : 0;
 }
 export function incomePerSec(s) {
-  return throughput(s) * avgBaseValue(s) * stageValueMult(s.stage);
+  return throughput(s) * avgBaseValue(s) * stageValueMult(s.stage) * valueMods(s) * (1 + (GOLDEN_MULT - 1) * goldenChance(s));
 }
 export function offlineCapSeconds(s) {
-  return Math.min(MAX_OFFLINE_SECONDS_HARD, (2 + 0.2 * s.levels.capacity) * 3600);
+  return Math.min(MAX_OFFLINE_SECONDS_HARD + 8 * 3600, (2 + 0.2 * s.levels.capacity + xl(s, 'vault')) * 3600);
+}
+export function offlineEfficiency(s) {
+  return OFFLINE_EFFICIENCY + 0.04 * xl(s, 'vault');
 }
 // ---- game clock: while a mini-game session pauses the main game this clock is frozen, so boost / cooldown deadlines
 // cannot expire in the background. Resuming shifts every deadline by the paused duration (remaining time is preserved).
@@ -369,8 +410,9 @@ export function computeOffline(s, now = Date.now()) {
   // boost only counts for the part of the absence that really overlapped the boost window
   const ov = Math.max(0, Math.min(counted, (Math.min(now, s.boost.until) - (s.lastSaved || now)) / 1000));
   const bm = s.boost.mult > 1 ? (ov * s.boost.mult + (counted - ov)) / counted : 1;
-  const gain = incomePerSec(s) * counted * OFFLINE_EFFICIENCY * bm * permMult(s);
-  const coins = Math.floor(throughput(s) * counted * OFFLINE_EFFICIENCY);
+  const eff = offlineEfficiency(s);
+  const gain = incomePerSec(s) * counted * eff * bm * permMult(s);
+  const coins = Math.floor(throughput(s) * counted * eff);
   if (gain <= 0) return null;
   return { elapsed, counted, capped: elapsed > cap, gain, coins };
 }
@@ -489,7 +531,10 @@ export function finishMini(s, result, now, rnd = Math.random) {
 
 // ---- runs (prestige) ---------------------------------------------------------------------------------------------------
 export function canNewRun(s) {
-  return s.stage >= ECON.run.minStage;
+  return s.stage >= ECON.run.minStage && (s.runMilestones || []).length >= ECON.run.milestones;
+}
+export function newRunNeeds(s) {
+  return { stage: ECON.run.minStage, stageOk: s.stage >= ECON.run.minStage, milestones: ECON.run.milestones, done: (s.runMilestones || []).length };
 }
 export function previewNewRun(s) {
   const gain = Math.max(0, s.stage - 1) * ECON.run.pointsPerStage;
@@ -512,11 +557,23 @@ export const ACHIEVEMENTS = {
   flyer: { name: 'Win Flying Ball 3 times', test: (s) => s.mini.wins >= 3 },
   x16: { name: 'Win a x16 or higher boost', test: (s) => s.mini.bestMult >= 16 },
   rich: { name: 'Earn $1M in total', test: (s) => s.stats.totalEarned >= 1e6 },
+  parts15: { name: 'Install 15 part tiers', test: (s) => PART_IDS.reduce((a, k) => a + pt(s, k), 0) >= 15 },
+  missions25: { name: 'Complete 25 missions', test: (s) => s.stats.missionsDone >= 25 },
+  combo50: { name: 'Reach a x50 combo', test: (s) => s.stats.bestCombo >= 50 },
+  allMiles: { name: 'Complete all run milestones', test: (s) => (s.runMilestones || []).length >= 16 },
+  stage15: { name: 'Reach stage 15', test: (s) => s.perm.bestStage >= 15 },
+  crystal: { name: 'Get a Crystal machine part', test: (s) => PART_IDS.some((k) => pt(s, k) >= 5) },
 };
+// cosmetic reward of an achievement (collections, cosmetic only)
+export const ACH_COSMETIC = { run1: 'pipe_ruby', stage10: 'pipe_cobalt', rich: 'pipe_gold', parts15: 'pipe_obsidian', missions25: 'pipe_candy', flyer: 'spark_ice', combo50: 'spark_neon', allMiles: 'spark_ember' };
 export function checkAchievements(s) {
   const out = [];
   for (const [id, a] of Object.entries(ACHIEVEMENTS)) {
-    if (!s.perm.achievements.includes(id) && a.test(s)) { s.perm.achievements.push(id); out.push(id); }
+    if (!s.perm.achievements.includes(id) && a.test(s)) {
+      s.perm.achievements.push(id); out.push(id);
+      const c = ACH_COSMETIC[id];
+      if (c && !s.perm.cosmetics.includes(c)) s.perm.cosmetics.push(c);
+    }
   }
   if (canNewRun(s) && !s.perm.unlocks.includes('newrun')) s.perm.unlocks.push('newrun');
   return out;
@@ -538,7 +595,10 @@ export function applyNewRun(s) {
   s.levels = { rate: 0, capacity: 0, rare: 0 };
   s.cursor = { owned: false, on: true };
   s.machines = nm;
-  s.runStats = { earned: 0, coins: 0 };
+  s.runStats = { earned: 0, coins: 0, upgrades: 0, bestCombo: 0 };
+  s.xlv = Object.fromEntries(EXTRA_IDS.map((k) => [k, 0]));
+  s.runMilestones = [];
+  // kept: gems, machine parts, missions, collections, achievements, points, statistics, Flying Ball, settings
   checkAchievements(s);
   return pv;
 }

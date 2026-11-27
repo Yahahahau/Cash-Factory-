@@ -126,14 +126,15 @@ export function showReward(ui, res, h) {
 export function openNewRun(ui, s, pv, h) {
   const names = { pusherA: 'Piston A', rate: 'Coins/s', capacity: 'Capacity' };
   const boost = E.miniStatus(s);
-  const html = `<div class="xprow"><div class="xpico-lg">${icon('flag', 32)}</div><div class="grow"><div class="xph">Start run ${pv.run}?</div><div class="xps">Earn permanent upgrade points by restarting.</div></div></div>
-    ${XPGroup(`Previous run (${pv.prev.run})`, kv('Stage reached', pv.prev.stage) + kv('Money earned', E.fmtMoney(pv.prev.earned), 'money') + kv('Coins collected', E.fmtCash(Math.floor(pv.prev.coins))))}
-    ${XPGroup('New run bonuses', kv('Starting cash', E.fmtMoney(pv.startCash), 'money') + kv('Upgrade points', `+${pv.pointsGain} (total ${pv.points})`) + kv('Permanent income', `x${pv.permMult.toFixed(2)}`))}
+  const tiers = Object.values(s.parts || {}).reduce((a, v) => a + v, 0);
+  const html = `<div class="xprow"><div class="xpico-lg">${icon('flag', 32)}</div><div class="grow"><div class="xph">Start run ${pv.run}?</div><div class="xps">A milestone: bank this run as permanent upgrade points and start again stronger.</div></div></div>
+    ${XPGroup(`What you achieved in run ${pv.prev.run}`, kv('Stage reached', pv.prev.stage) + kv('Money earned', E.fmtMoney(pv.prev.earned), 'money') + kv('Coins collected', E.fmtCash(Math.floor(pv.prev.coins))) + kv('Upgrades bought', s.runStats.upgrades || 0) + kv('Run milestones', (s.runMilestones || []).length) + kv('Best combo', 'x' + (s.runStats.bestCombo || 0)))}
+    ${XPGroup('Next run benefits', kv('Starting cash', E.fmtMoney(pv.startCash), 'money') + kv('Upgrade points', `+${pv.pointsGain} (total ${pv.points})`) + kv('Permanent income', `x${pv.permMult.toFixed(2)}`) + kv('Machine part tiers', tiers + ' (kept)'))}
     ${XPGroup(`New costs (x${pv.priceMult.toFixed(2)})`, pv.prices.map((p) => kv(names[p.key], E.fmtMoney(p.cost))).join(''))}
-    ${XPGroup('Kept permanently', `<div class="xpt">Gems (${Math.floor(s.gems)}), best stage (${Math.max(s.perm.bestStage, s.stage)}), total earnings, achievements (${s.perm.achievements.length}), settings, statistics and Flying Ball progress${boost.state === 'ready' ? '' : ' (boost and cooldown keep running)'}.</div>`)}
-    ${XPGroup('Reset', '<div class="xpt">Upgrade levels, stage, stage progress and cash of this run go back to the start.</div>')}
+    ${XPGroup('Kept permanently', `<div class="xpt">Your account and cloud save, gems (${Math.floor(s.gems)}), Machine Parts, missions in progress, collection items and equipped cosmetics, achievements (${s.perm.achievements.length}), best stage (${Math.max(s.perm.bestStage, s.stage)}), total earnings, statistics, settings and Flying Ball progress${boost.state === 'ready' ? '' : ' (boost and cooldown keep running)'}.</div>`)}
+    ${XPGroup('Reset for the new run', '<div class="xpt">Cash, stage and stage progress, machine and core upgrade levels, branch upgrades (Economy, Automation, Special), the Cursor helper and run milestones. Nothing is deleted from your saves: the new run is saved like any other progress.</div>')}
     <div class="xp-btnrow">${XPButton({ id: 'nrGo', label: 'Start', def: true, cls: 'touch green' })}${XPButton({ id: 'nrNo', label: 'Cancel', cls: 'touch' })}</div>`;
-  const w = ui.wm.open({ id: 'newrun', title: 'New Run', icon: 'flag', width: 340, html, modal: true, min: false, max: false });
+  const w = ui.wm.open({ id: 'newrun', title: 'New Run', icon: 'flag', width: 360, html, modal: true, min: false, max: false });
   w.q('#nrNo').addEventListener('click', () => { h.onClick(); w.close(); });
   w.q('#nrGo').addEventListener('click', () => { w.close(true); h.onNewRun(); });
 }

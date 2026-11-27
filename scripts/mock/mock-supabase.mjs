@@ -62,7 +62,7 @@ export function startMock(port = 54400) {
     }
     if (path === '/rest/v1/rpc/save_game') {
       const cur = saves.get(u.id);
-      if (json.p_save_version > 3 || JSON.stringify(json.p_save_data).length > 500000) return send(400, { code: '22023', message: 'invalid save' });
+      if (json.p_save_version > 4 || JSON.stringify(json.p_save_data).length > 500000) return send(400, { code: '22023', message: 'invalid save' });
       if (cur && !json.p_force && Number(json.p_base_revision) !== cur.revision) return send(200, { status: 'conflict', revision: cur.revision });
       if (!cur && json.p_base_revision != null) return send(200, { status: 'conflict', revision: 0 });
       const row = { save_data: json.p_save_data, save_version: json.p_save_version, revision: (cur ? cur.revision : 0) + 1, updated_at: new Date().toISOString(), client_saved_at: json.p_client_saved_at, progress_score: json.p_progress_score };

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { VIEW_HALF_W, VIEW_TOP, COIN_TYPES } from './layout.js';
+import { TIER_COLOR, COSMETICS, DEFAULT_EQUIP } from './content.js';
 import { buildHouse, coinGeometry } from './scene/geometry.js';
 import { MaterialLibrary } from './scene/materials.js';
 import { themeFor } from './scene/themes.js';
@@ -128,6 +129,37 @@ export class World {
     this.sun = d;
     this.fill = f;
     this.light = { cur: null, from: null, to: null };
+  }
+
+  // machine parts + collections become visible on the 3D machine (shared materials, so every stage shows them)
+  // piston -> piston heads, frame -> housings, tray -> grinder rollers, drive -> steel fittings, deck -> glowing
+  // platform edges; pipe paint -> dispenser pipe. Stock tier keeps the original look.
+  applyLook(st) {
+    const M = this.M;
+    if (!this._base) this._base = { steel: M.steel.color.getHex(), housing: M.housing.color.getHex(), grinder: M.grinderGreen.color.getHex(), dark: M.darkSteel.color.getHex() };
+    const tier = (k) => (st.parts && st.parts[k]) || 0;
+    const tint = (mat, base, t, emis) => {
+      mat.color.setHex(t ? TIER_COLOR[t] : base);
+      if (emis && mat.emissive) { mat.emissive.setHex(t >= 4 ? TIER_COLOR[t] : 0x000000); mat.emissiveIntensity = t >= 4 ? 0.12 : mat.emissiveIntensity; }
+    };
+    tint(M.steel, this._base.steel, tier('piston'), true);
+    tint(M.housing, this._base.housing, tier('frame'));
+    if (tier('frame')) M.housing.color.multiplyScalar(0.55); // housings stay darker than the moving parts
+    M.grinderGreen.color.setHex(tier('tray') ? TIER_COLOR[tier('tray')] : this._base.grinder);
+    tint(M.darkSteel, this._base.dark, tier('drive'));
+    if (tier('drive')) M.darkSteel.color.multiplyScalar(0.7);
+    this.deckTier = tier('deck');
+    const pipe = COSMETICS[(st.perm.equip && st.perm.equip.pipe) || DEFAULT_EQUIP.pipe] || COSMETICS[DEFAULT_EQUIP.pipe];
+    M.pipe.color.setHex(pipe.color);
+    M.pipe.emissive.setHex(pipe.color).multiplyScalar(0.18);
+    this._applyDeck();
+  }
+  _applyDeck() {
+    if (!this.stage) return;
+    const side = this.stage.houseMats[1];
+    const t = this.deckTier || 0;
+    side.userData.deckEmissive = t ? TIER_COLOR[t] : null;
+    side.userData.deckI = t ? 0.06 + 0.035 * t : 0;
   }
 
   setQuality(q) {
@@ -333,6 +365,7 @@ export class World {
       this.scene.add(this.stage.group);
       this.pipe.position.set(def.pipe.x, def.pipe.y, 0);
       this.theme = theme;
+      this._applyDeck();
       this._applyThemeInstant(theme);
       this.pulse = 0;
       if (this.onTransition) this.onTransition(false);
@@ -379,6 +412,7 @@ export class World {
       this.theme = theme;
       this.scene.add(S.group);
       this.pipe.position.set(def.pipe.x, def.pipe.y, 0);
+      this._applyDeck();
       // the new walls take over the old wall colours and blend to their own, so the re-skin is not a hard cut
       const [nf, ns] = S.houseMats;
       const fromF = new THREE.Color(oldTheme.surface.color), toF = new THREE.Color(theme.surface.color);
@@ -575,8 +609,10 @@ export class World {
     else lamp.emissiveIntensity = 0.9 + 0.3 * Math.sin(t * 1.4) + 0.6 * this.pulse;
     const side = this.stage.houseMats[1];
     const base = this.stage.houseMats.baseEmissive || 0;
-    if (idle === 'neonPulse') side.emissiveIntensity = base * (0.65 + 0.35 * Math.sin(t * 1.7)) + this.flash * 0.3;
-    else side.emissiveIntensity = base + this.flash * 0.15;
+    const deck = side.userData.deckI || 0;
+    if (deck && !th.trim.emissive) side.emissive.setHex(side.userData.deckEmissive);
+    if (idle === 'neonPulse') side.emissiveIntensity = base * (0.65 + 0.35 * Math.sin(t * 1.7)) + this.flash * 0.3 + deck;
+    else side.emissiveIntensity = base + this.flash * 0.15 + deck * (0.85 + 0.15 * Math.sin(t * 2.2));
     if (this.flash > 0 && !side.emissive.getHex()) side.emissive.set(th.accent);
   }
 

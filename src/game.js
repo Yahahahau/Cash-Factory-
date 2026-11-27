@@ -1,4 +1,6 @@
 import * as E from './economy.js';
+import * as P from './progression.js';
+import { COSMETICS } from './content.js';
 import { getStage } from './layout.js';
 
 const STEP = 1 / 60;
@@ -77,7 +79,8 @@ export class Game {
     const d = this.stageDef.spawn;
     const type = E.pickType(s);
     const x = d.x + (Math.random() - 0.5) * 0.24;
-    const idx = this.physics.spawn(x, d.y, type, 1);
+    const mult = Math.random() < E.goldenChance(s) ? E.GOLDEN_MULT : 1; // Golden Touch: drawn gold, worth x3
+    const idx = this.physics.spawn(x, d.y, type, mult);
     if (idx < 0) return false;
     s.stats.coinsDropped++;
     if (manual) s.stats.manualDrops++;
@@ -125,6 +128,15 @@ export class Game {
       if (this.chargeT >= E.CHARGE_TIME) { this.chargeT = 0; this.charges++; }
     } else this.chargeT = 0;
     if (this.charges > maxC) this.charges = maxC;
+    // Auto Feeder (Automation branch): uses one stored drop charge by itself at its interval
+    const fl = s.xlv ? s.xlv.feeder : 0;
+    if (fl > 0 && this.stageBusy <= 0) {
+      this.feedT = (this.feedT || 0) + dt;
+      if (this.feedT >= P.feederInterval(fl) && this.charges >= 1 && this.physics.active.length < Math.min(E.capacity(s), this.limit)) {
+        this.feedT = 0;
+        if (this._spawn(false)) this.charges -= 1;
+      }
+    }
     if (this.stageBusy > 0) this.stageBusy -= dt;
     else {
       const cap = Math.min(E.capacity(s), this.limit);
@@ -194,8 +206,9 @@ export class Game {
     if (sl.state !== 1) return;
     if (fx) {
       this.combo++;
-      this.comboT = 2.5;
+      this.comboT = E.comboWindow(s);
       if (this.combo > s.stats.bestCombo) s.stats.bestCombo = this.combo;
+      if (this.combo > s.runStats.bestCombo) s.runStats.bestCombo = this.combo;
     }
     const inc = E.income(s, E.coinValue(s, sl.type, sl.mult, fx ? this.combo : 0));
     const value = inc.final;
@@ -214,7 +227,7 @@ export class Game {
       const pit = this.stageDef.pit;
       this.world.pulse = 1;
       this.world.particles.emit(sl.body.translation().x, pit.collectY + 0.3, 0.5, sl.type >= 2 ? 4 : 2, {
-        color: sl.type === 3 ? [0x74f6ff, 0xffffff] : [0xffe066, 0xffffff], speed: 2, life: 0.4, gravity: 6, size: 0.09, up: 0.8,
+        color: sl.type === 3 ? [0x74f6ff, 0xffffff] : sl.mult > 1 ? [0xffd700, 0xfff4b0] : COSMETICS[P.equipped(s, 'spark')].colors, speed: 2, life: 0.4, gravity: 6, size: 0.09, up: 0.8,
       });
       this.physics.beginSuck(idx);
     } else this.physics.release(idx);

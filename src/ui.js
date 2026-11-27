@@ -1,4 +1,6 @@
 import * as E from './economy.js';
+import * as P from './progression.js';
+import { progressMenu, refreshProgress } from './ui-progress.js';
 import { paintBall } from './sprites.js';
 import { icon } from './icons.js';
 import { mountLunaWave } from './lunawave-ui.js';
@@ -128,7 +130,9 @@ export class UI {
     return [
       { key: 'mini', icon: 'ball', label: 'Flying Ball', sub: st.state === 'ready' ? 'Ready to play' : E.fmtClock(st.remaining), run: () => openMini(this, this.state, this.h) },
       { key: 'boost', icon: 'boost', label: 'Profit Boost', sub: st.state === 'boost' ? 'x' + st.mult + ' active' : 'Not active', run: () => openBoost(this, this.state, this.h) },
-      { key: 'run', icon: 'flag', label: 'New Run', sub: E.canNewRun(s) ? 'Available' : 'Unlocks at stage ' + E.ECON.run.minStage, disabled: !E.canNewRun(s), run: () => this.h.onNewRunOpen() },
+      { key: 'run', icon: 'flag', label: 'New Run', sub: E.canNewRun(s) ? 'Available' : `Stage ${E.ECON.run.minStage} + ${E.ECON.run.milestones} milestones`, run: () => this.h.onNewRunOpen() },
+      '-',
+      ...progressMenu(this),
       '-',
       { key: 'cur', icon: 'mouse', label: 'Cursor Auto Push Coin', sub: this.state.cursor.owned ? (this.state.cursor.on ? 'ON' : 'OFF') : '$' + E.fmtCash(E.cursorCost(this.state)), run: () => this.openCursor() },
       { key: 'acct', icon: 'user', label: 'Account', sub: this.account ? this.account.label : 'Guest', run: () => this.account && this.account.openWindow() },
@@ -254,6 +258,10 @@ export class UI {
       p.classList.toggle('ready', info.canBuy);
     }
     renderUpgrade(this, false);
+    refreshProgress(this);
+    // small badge on the Start button when a mission can be claimed or a machine part can be bought
+    const ready = P.claimableMissions(s) > 0 || P.buyOptions(s).some((o) => o.cur === 'gems' && s.gems >= o.cost);
+    if (this.el.startBtn && this._badge !== ready) { this._badge = ready; this.el.startBtn.classList.toggle('badge', ready); }
     this.updateCursor();
     this.updateMini(s);
   }
@@ -341,7 +349,7 @@ export class UI {
       id: 'offline', title: 'Welcome Back', ico: 'clock', width: 320,
       message: `<div class="xph">You were away for ${E.fmtDuration(info.elapsed)}</div><div class="xps">${info.capped ? `Counted up to ${E.fmtDuration(info.counted)}.` : ''}</div>`,
       extra: `<div class="xppanel mstat"><span>Offline earnings</span><b id="offGain" style="color:var(--money)">+$0</b><span class="xps">About ${E.fmtNum(info.coins)} coins collected</span></div>
-      <div class="xps">Offline income is ${Math.round(E.OFFLINE_EFFICIENCY * 100)}% of normal and stores up to ${E.fmtDuration(info.cap)}. Upgrade Capacity to raise the limit.</div>`,
+      <div class="xps">Offline income is ${Math.round(E.offlineEfficiency(this.state) * 100)}% of normal and stores up to ${E.fmtDuration(info.cap)}. Capacity and Night Vault raise the limit.</div>`,
       buttons: [{ id: 'offOk', label: 'Collect', def: true, onClick: (win) => { this.h.onClick(); win.close(); } }],
     });
     const gain = w.q('#offGain');
